@@ -10,13 +10,13 @@ class Settings(BaseSettings):
     database_test_url: str = "postgresql://spero@localhost:5432/hrpilot_test_db"
     
     # Security
-    secret_key: str = "your-super-secret-key-here-change-in-production"
+    secret_key: str = os.getenv("SECRET_KEY", "your-super-secret-key-here-change-in-production")
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
     
     # JWT
-    jwt_secret_key: str = "your-jwt-secret-key-here"
+    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "your-jwt-secret-key-here")
     jwt_algorithm: str = "HS256"
     
     # Email
@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     max_file_size: int = 10485760  # 10MB
     
     # Application
-    debug: bool = os.getenv("DEBUG", "true").lower() == "true"
-    environment: str = os.getenv("ENVIRONMENT", "development")
+    debug: bool = os.getenv("DEBUG", "false").lower() == "true"
+    environment: str = os.getenv("ENVIRONMENT", "production")
     cors_origins: Union[List[str], str] = [
         # Development URLs
         "http://localhost:3000", 
