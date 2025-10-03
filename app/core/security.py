@@ -5,8 +5,14 @@ from passlib.context import CryptContext
 from app.core.config import settings
 import re
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__default_rounds=12)
+# Password hashing context - more robust configuration
+pwd_context = CryptContext(
+    schemes=["bcrypt"], 
+    deprecated="auto", 
+    bcrypt__default_rounds=12,
+    bcrypt__min_rounds=10,
+    bcrypt__max_rounds=15
+)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -25,7 +31,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
             return pwd_context.verify(plain_password, hashed_password)
         except Exception as e2:
             print(f"Password verification retry error: {e2}")
-            return False
+            # Try direct bcrypt as fallback
+            try:
+                import bcrypt
+                return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+            except Exception as e3:
+                print(f"Direct bcrypt fallback error: {e3}")
+                return False
 
 
 def get_password_hash(password: str) -> str:
