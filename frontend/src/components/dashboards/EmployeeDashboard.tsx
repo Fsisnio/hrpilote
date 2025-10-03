@@ -173,10 +173,6 @@ const EmployeeDashboard: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Employee Dashboard</h1>
           <p className="text-gray-600">Welcome back, {user?.first_name}! Here's your personal overview.</p>
-          {/* Debug info */}
-          <div className="bg-blue-100 border border-blue-300 rounded p-2 mt-2 text-sm">
-            <strong>DEBUG:</strong> You are viewing the EmployeeDashboard. Role: {user?.role}
-          </div>
         </div>
 
         {/* Personal Stats */}

@@ -86,10 +86,6 @@ const OrgAdminDashboard: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Organization Admin Dashboard</h1>
           <p className="text-gray-600">Welcome, {user?.first_name}! Manage your organization and oversee operations.</p>
-          {/* Debug info */}
-          <div className="bg-red-100 border border-red-300 rounded p-2 mt-2 text-sm">
-            <strong>DEBUG:</strong> You are viewing the OrgAdminDashboard. Role: {user?.role}
-          </div>
         </div>
 
         {/* Admin Overview Stats */}
