@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
-from typing import List, Optional
+from typing import List, Optional, Union
 import os
+import json
 
 
 class Settings(BaseSettings):
@@ -35,7 +36,7 @@ class Settings(BaseSettings):
     # Application
     debug: bool = True
     environment: str = "development"
-    cors_origins: List[str] = [
+    cors_origins: Union[List[str], str] = [
         "http://localhost:3000", 
         "http://localhost:3001", 
         "http://localhost:3002", 
@@ -58,6 +59,17 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Handle CORS_ORIGINS as either string or list
+        if isinstance(self.cors_origins, str):
+            try:
+                # Try to parse as JSON array
+                self.cors_origins = json.loads(self.cors_origins)
+            except json.JSONDecodeError:
+                # If not JSON, split by comma
+                self.cors_origins = [origin.strip() for origin in self.cors_origins.split(',')]
 
 
 # Create settings instance
