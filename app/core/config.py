@@ -5,7 +5,7 @@ import os
 
 class Settings(BaseSettings):
     # Database
-    database_url: str = "postgresql://spero@localhost:5432/hrpilot_db"
+    database_url: str = "postgresql://hrpilote_user:yzQ7ssqnLq64rGAj1lTd5DihrvZn3MxD@dpg-d3fujiili9vc73eo6dng-a.oregon-postgres.render.com/hrpilote"
     database_test_url: str = "postgresql://spero@localhost:5432/hrpilot_test_db"
     
     # Security
