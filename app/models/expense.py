@@ -96,7 +96,7 @@ class Expense(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
     # Relationships
-    employee = relationship("Employee")
+    employee = relationship("Employee", overlaps="expenses")
     organization = relationship("Organization")
     approver = relationship("User", foreign_keys=[approved_by])
     rejector = relationship("User", foreign_keys=[rejected_by])
@@ -212,7 +212,7 @@ class ExpenseReport(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
     # Relationships
-    employee = relationship("Employee")
+    employee = relationship("Employee", overlaps="expense_reports")
     organization = relationship("Organization")
     approver = relationship("User", foreign_keys=[approved_by])
     expenses = relationship("Expense", secondary="expense_report_items")
@@ -229,8 +229,8 @@ class ExpenseReportItem(Base):
     created_at = Column(DateTime, default=func.now())
     
     # Relationships
-    expense_report = relationship("ExpenseReport")
-    expense = relationship("Expense")
+    expense_report = relationship("ExpenseReport", overlaps="expenses")
+    expense = relationship("Expense", overlaps="expenses")
 
 
 class TravelRequest(Base):
@@ -268,7 +268,7 @@ class TravelRequest(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
     # Relationships
-    employee = relationship("Employee")
+    employee = relationship("Employee", overlaps="travel_requests")
     organization = relationship("Organization")
     approver = relationship("User", foreign_keys=[approved_by])
     expenses = relationship("Expense", foreign_keys="Expense.travel_request_id")
@@ -309,6 +309,6 @@ class AdvanceRequest(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
     # Relationships
-    employee = relationship("Employee")
+    employee = relationship("Employee", overlaps="advance_requests")
     organization = relationship("Organization")
     approver = relationship("User", foreign_keys=[approved_by]) 

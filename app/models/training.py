@@ -138,7 +138,7 @@ class CourseEnrollment(Base):
     
     # Relationships
     course = relationship("Course", back_populates="enrollments")
-    employee = relationship("Employee")
+    employee = relationship("Employee", overlaps="course_enrollments")
     organization = relationship("Organization")
     approver = relationship("User", foreign_keys=[approved_by])
     assessments = relationship("AssessmentResult", back_populates="enrollment", cascade="all, delete-orphan")
@@ -348,6 +348,6 @@ class EmployeeSkill(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
     # Relationships
-    employee = relationship("Employee")
+    employee = relationship("Employee", overlaps="skills")
     skill = relationship("Skill", back_populates="employee_skills")
     assessor = relationship("User", foreign_keys=[assessed_by]) 

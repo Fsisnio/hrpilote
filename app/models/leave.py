@@ -71,7 +71,7 @@ class LeaveRequest(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
     # Relationships
-    employee = relationship("Employee", foreign_keys=[employee_id])
+    employee = relationship("Employee", foreign_keys=[employee_id], overlaps="leave_requests")
     organization = relationship("Organization")
     requester = relationship("User", foreign_keys=[requested_by])
     approver = relationship("User", foreign_keys=[approved_by])

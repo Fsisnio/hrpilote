@@ -135,7 +135,7 @@ class PayrollRecord(Base):
     
     # Relationships
     payroll_period = relationship("PayrollPeriod", back_populates="payroll_records")
-    employee = relationship("Employee")
+    employee = relationship("Employee", overlaps="payroll_records")
     organization = relationship("Organization")
     approver = relationship("User", foreign_keys=[approved_by])
     components = relationship("PayrollComponent", back_populates="payroll_record", cascade="all, delete-orphan")

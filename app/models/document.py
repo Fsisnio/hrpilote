@@ -96,7 +96,7 @@ class Document(Base):
     organization = relationship("Organization")
     uploaded_user = relationship("User", foreign_keys=[uploaded_by])
     approved_user = relationship("User", foreign_keys=[approved_by])
-    employee = relationship("Employee")
+    employee = relationship("Employee", overlaps="documents")
     department = relationship("Department")
     parent_document = relationship("Document", remote_side=[id])
     versions = relationship("Document", back_populates="parent_document")
