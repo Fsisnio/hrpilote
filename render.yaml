@@ -54,3 +54,4 @@ services:
           type: web
           envVarKey: RENDER_EXTERNAL_URL
           path: /api/v1
+    pullRequestPreviewsEnabled: false
