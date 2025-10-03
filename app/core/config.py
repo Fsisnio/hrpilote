@@ -34,9 +34,10 @@ class Settings(BaseSettings):
     max_file_size: int = 10485760  # 10MB
     
     # Application
-    debug: bool = True
-    environment: str = "development"
+    debug: bool = os.getenv("DEBUG", "true").lower() == "true"
+    environment: str = os.getenv("ENVIRONMENT", "development")
     cors_origins: Union[List[str], str] = [
+        # Development URLs
         "http://localhost:3000", 
         "http://localhost:3001", 
         "http://localhost:3002", 
@@ -46,7 +47,12 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3001", 
         "http://127.0.0.1:3002",
         "http://127.0.0.1:3003",
-        "http://127.0.0.1:8000"
+        "http://127.0.0.1:8000",
+        # Production URLs
+        "https://hrpilotefront.onrender.com",
+        "https://hrpiloteback.onrender.com",
+        "https://hrpilotefront.onrender.com/",
+        "https://hrpiloteback.onrender.com/"
     ]
     
     # Password Policy
@@ -62,14 +68,28 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Handle CORS_ORIGINS as either string or list
-        if isinstance(self.cors_origins, str):
-            try:
-                # Try to parse as JSON array
-                self.cors_origins = json.loads(self.cors_origins)
-            except json.JSONDecodeError:
-                # If not JSON, split by comma
-                self.cors_origins = [origin.strip() for origin in self.cors_origins.split(',')]
+        
+        # Override CORS origins from environment variable if set
+        env_cors_origins = os.getenv("CORS_ORIGINS")
+        if env_cors_origins:
+            if isinstance(env_cors_origins, str):
+                try:
+                    # Try to parse as JSON array
+                    self.cors_origins = json.loads(env_cors_origins)
+                except json.JSONDecodeError:
+                    # If not JSON, split by comma
+                    self.cors_origins = [origin.strip() for origin in env_cors_origins.split(',')]
+            else:
+                self.cors_origins = env_cors_origins
+        else:
+            # Handle CORS_ORIGINS as either string or list
+            if isinstance(self.cors_origins, str):
+                try:
+                    # Try to parse as JSON array
+                    self.cors_origins = json.loads(self.cors_origins)
+                except json.JSONDecodeError:
+                    # If not JSON, split by comma
+                    self.cors_origins = [origin.strip() for origin in self.cors_origins.split(',')]
 
 
 # Create settings instance
