@@ -166,8 +166,24 @@ async def create_user(
                 detail="Username already taken"
             )
         
-        # Create new user
-        hashed_password = get_password_hash(user_data.password)
+        # Create new user with validated password hash
+        try:
+            hashed_password = get_password_hash(user_data.password)
+            
+            # Validate the generated hash
+            from app.core.security import is_valid_password_hash
+            if not is_valid_password_hash(hashed_password):
+                raise ValueError(f"Generated invalid password hash: {hashed_password[:20]}...")
+            
+            print(f"✅ Creating user {user_data.email} with valid password hash")
+            
+        except Exception as e:
+            print(f"❌ Password hashing failed for user {user_data.email}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to hash password: {str(e)}"
+            )
+        
         new_user = User(
             email=user_data.email,
             username=user_data.username,

@@ -77,16 +77,23 @@ async def login(
     """
     Authenticate user and return access token
     """
+    print(f"Login attempt for email: {login_data.email}")
+    print(f"Password length: {len(login_data.password)}")
+    
     # Find user by email
     user = db.query(User).filter(User.email == login_data.email).first()
     if not user:
+        print("User not found")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
         )
     
+    print(f"User found: {user.email}")
+    
     # Check if user is active
     if not user.is_active:
+        print("User is inactive")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Account is deactivated"
@@ -94,13 +101,33 @@ async def login(
     
     # Check if user is locked
     if user.locked_until and user.locked_until > datetime.utcnow():
+        print("User is locked")
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail="Account is temporarily locked"
         )
     
+    # Check if password hash is valid before verification
+    from app.core.security import is_valid_password_hash
+    if not is_valid_password_hash(user.hashed_password):
+        print(f"❌ Invalid password hash detected for user {user.email}")
+        print(f"   Hash: {user.hashed_password[:30]}...")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="User account has invalid password hash. Please contact administrator."
+        )
+    
     # Verify password
-    if not verify_password(login_data.password, user.hashed_password):
+    print("Attempting password verification...")
+    try:
+        password_valid = verify_password(login_data.password, user.hashed_password)
+        print(f"Password verification result: {password_valid}")
+    except Exception as e:
+        print(f"Password verification error: {e}")
+        password_valid = False
+    
+    if not password_valid:
+        print("Password verification failed")
         # Increment failed login attempts
         user.failed_login_attempts += 1
         

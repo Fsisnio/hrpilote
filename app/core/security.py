@@ -42,23 +42,56 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """
-    Hash a password
+    Hash a password with robust error handling
     """
     try:
+        # Validate password input
+        if not password or not isinstance(password, str):
+            raise ValueError("Password must be a non-empty string")
+        
         # Bcrypt has a 72-byte limit for passwords
         if len(password.encode('utf-8')) > 72:
             password = password[:72]
-        return pwd_context.hash(password)
+        
+        # Generate bcrypt hash
+        hashed = pwd_context.hash(password)
+        
+        # Validate the generated hash
+        if not hashed or not hashed.startswith('$2b$'):
+            raise ValueError(f"Generated invalid hash: {hashed[:20]}...")
+        
+        # Verify the hash works
+        if not verify_password(password, hashed):
+            raise ValueError("Generated hash verification failed")
+        
+        print(f"✅ Password hashed successfully: {hashed[:20]}...")
+        return hashed
+        
     except Exception as e:
-        print(f"Password hashing error: {e}")
+        print(f"❌ Password hashing error: {e}")
         # Try with a more lenient approach
         try:
-            return pwd_context.hash(password)
+            hashed = pwd_context.hash(password)
+            if hashed and hashed.startswith('$2b$'):
+                print(f"✅ Password hashed on retry: {hashed[:20]}...")
+                return hashed
+            else:
+                raise ValueError("Retry produced invalid hash")
         except Exception as e2:
-            print(f"Password hashing retry error: {e2}")
-            # Fallback to a simple hash if bcrypt fails
-            import hashlib
-            return hashlib.sha256(password.encode()).hexdigest()
+            print(f"❌ Password hashing retry error: {e2}")
+            # Last resort: use a different bcrypt configuration
+            try:
+                from passlib.context import CryptContext
+                fallback_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+                hashed = fallback_context.hash(password)
+                if hashed and hashed.startswith('$2b$'):
+                    print(f"✅ Password hashed with fallback: {hashed[:20]}...")
+                    return hashed
+                else:
+                    raise ValueError("Fallback produced invalid hash")
+            except Exception as e3:
+                print(f"❌ All password hashing methods failed: {e3}")
+                raise ValueError(f"Failed to hash password: {str(e3)}")
 
 
 def validate_password(password: str) -> dict:
@@ -142,4 +175,54 @@ def is_token_expired(token: str) -> bool:
     exp_time = get_token_expiration(token)
     if exp_time:
         return datetime.utcnow() > exp_time
-    return True 
+    return True
+
+
+def is_valid_password_hash(password_hash: str) -> bool:
+    """
+    Check if a password hash is valid (bcrypt format)
+    """
+    if not password_hash or not isinstance(password_hash, str):
+        return False
+    
+    # Check if it's a valid bcrypt hash
+    if not password_hash.startswith('$2b$'):
+        return False
+    
+    # Check if it has the right structure
+    parts = password_hash.split('$')
+    if len(parts) != 4:
+        return False
+    
+    # Check if it has the right length (bcrypt hashes are 60 characters)
+    if len(password_hash) != 60:
+        return False
+    
+    return True
+
+
+def fix_invalid_password_hash(user_id: int, new_password: str, db) -> bool:
+    """
+    Fix a user's invalid password hash
+    """
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return False
+        
+        # Generate new valid hash
+        new_hash = get_password_hash(new_password)
+        
+        # Update user
+        user.hashed_password = new_hash
+        user.failed_login_attempts = 0
+        user.locked_until = None
+        
+        db.commit()
+        print(f"✅ Fixed password hash for user {user.email}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to fix password hash for user {user_id}: {e}")
+        db.rollback()
+        return False 
