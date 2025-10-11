@@ -21,6 +21,13 @@ class UserCreate(BaseModel):
     organization_id: Optional[int] = None
     
     model_config = {"from_attributes": True}
+    
+    def model_post_init(self, __context) -> None:
+        """Validate password length after model initialization"""
+        if self.password:
+            password_bytes = self.password.encode('utf-8')
+            if len(password_bytes) > 72:
+                raise ValueError("Password cannot be longer than 72 bytes (approximately 72 characters for ASCII, fewer for Unicode characters like emojis)")
 
 class UserUpdate(BaseModel):
     email: Optional[str] = None
@@ -34,6 +41,13 @@ class UserUpdate(BaseModel):
     organization_id: Optional[int] = None
     
     model_config = {"from_attributes": True}
+    
+    def model_post_init(self, __context) -> None:
+        """Validate password length after model initialization"""
+        if self.password:
+            password_bytes = self.password.encode('utf-8')
+            if len(password_bytes) > 72:
+                raise ValueError("Password cannot be longer than 72 bytes (approximately 72 characters for ASCII, fewer for Unicode characters like emojis)")
 
 router = APIRouter()
 

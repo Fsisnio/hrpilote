@@ -17,12 +17,19 @@ pwd_context = CryptContext(
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
-    Verify a plain password against its hash
+    Verify a plain password against its hash with proper 72-byte limit handling
     """
     try:
-        # Bcrypt has a 72-byte limit for passwords
-        if len(plain_password.encode('utf-8')) > 72:
-            plain_password = plain_password[:72]
+        # Bcrypt has a 72-byte limit for passwords, not character limit
+        password_bytes = plain_password.encode('utf-8')
+        if len(password_bytes) > 72:
+            # Truncate to 72 bytes, but be careful not to break UTF-8 encoding
+            password_bytes = password_bytes[:72]
+            # Find the last complete UTF-8 character
+            while password_bytes and password_bytes[-1] & 0x80 and password_bytes[-1] & 0x40 == 0:
+                password_bytes = password_bytes[:-1]
+            plain_password = password_bytes.decode('utf-8', errors='ignore')
+        
         return pwd_context.verify(plain_password, hashed_password)
     except Exception as e:
         print(f"Password verification error: {e}")
@@ -42,16 +49,22 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """
-    Hash a password with robust error handling
+    Hash a password with robust error handling and proper 72-byte limit handling
     """
     try:
         # Validate password input
         if not password or not isinstance(password, str):
             raise ValueError("Password must be a non-empty string")
         
-        # Bcrypt has a 72-byte limit for passwords
-        if len(password.encode('utf-8')) > 72:
-            password = password[:72]
+        # Bcrypt has a 72-byte limit for passwords, not character limit
+        password_bytes = password.encode('utf-8')
+        if len(password_bytes) > 72:
+            # Truncate to 72 bytes, but be careful not to break UTF-8 encoding
+            password_bytes = password_bytes[:72]
+            # Find the last complete UTF-8 character
+            while password_bytes and password_bytes[-1] & 0x80 and password_bytes[-1] & 0x40 == 0:
+                password_bytes = password_bytes[:-1]
+            password = password_bytes.decode('utf-8', errors='ignore')
         
         # Generate bcrypt hash
         hashed = pwd_context.hash(password)
