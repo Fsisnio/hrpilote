@@ -18,10 +18,10 @@ async def initialize_database(db: Session = Depends(get_db)):
                 "success": True,
                 "message": "Database initialized successfully with test users",
                 "credentials": {
-                    "superadmin": "superadmin@hrpilot.com / Password123!",
-                    "orgadmin": "orgadmin@hrpilot.com / Password123!",
-                    "hr": "hr@hrpilot.com / Password123!",
-                    "employee": "employee@hrpilot.com / Password123!"
+                    "superadmin": "superadmin@hrpilot.com / Jesus1993.",
+                    "orgadmin": "sal@gmail.com / Jesus1993.",
+                    "testuser": "testa@gmail.com / testa123",
+                    "employee": "newuser@example.com / NewPassword123!"
                 }
             }
         else:
