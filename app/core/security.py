@@ -30,21 +30,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
                 password_bytes = password_bytes[:-1]
             plain_password = password_bytes.decode('utf-8', errors='ignore')
         
-        return pwd_context.verify(plain_password, hashed_password)
+        # Use direct bcrypt to avoid passlib warnings
+        import bcrypt
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
     except Exception as e:
         print(f"Password verification error: {e}")
-        # Try with a more lenient approach
+        # Fallback to passlib if direct bcrypt fails
         try:
             return pwd_context.verify(plain_password, hashed_password)
         except Exception as e2:
-            print(f"Password verification retry error: {e2}")
-            # Try direct bcrypt as fallback
-            try:
-                import bcrypt
-                return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
-            except Exception as e3:
-                print(f"Direct bcrypt fallback error: {e3}")
-                return False
+            print(f"Password verification fallback error: {e2}")
+            return False
 
 
 def get_password_hash(password: str) -> str:
