@@ -11,7 +11,8 @@ from app.core.security import (
     create_refresh_token, 
     verify_token,
     validate_password,
-    get_password_hash
+    get_password_hash,
+    needs_password_rehash
 )
 from app.core.config import settings
 from app.models.user import User, UserStatus
@@ -145,6 +146,12 @@ async def login(
     # Reset failed login attempts on successful login
     user.failed_login_attempts = 0
     user.last_login = datetime.utcnow()
+    
+    # Automatically re-hash password if using old method (gradual migration)
+    if needs_password_rehash(login_data.password, user.hashed_password):
+        print(f"🔄 Re-hashing password for {user.email} with new SHA-256 + bcrypt method")
+        user.hashed_password = get_password_hash(login_data.password)
+    
     db.commit()
     
     # Create tokens

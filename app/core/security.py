@@ -4,6 +4,8 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from app.core.config import settings
 import re
+import hashlib
+import base64
 
 # Password hashing context - more robust configuration
 pwd_context = CryptContext(
@@ -14,93 +16,97 @@ pwd_context = CryptContext(
     bcrypt__max_rounds=15
 )
 
+def _pre_hash_password(password: str) -> str:
+    """
+    Pre-hash password with SHA-256 to handle passwords of any length.
+    This allows bcrypt to work with passwords longer than 72 bytes.
+    Returns a base64-encoded SHA-256 hash.
+    """
+    # Hash the password with SHA-256
+    sha_hash = hashlib.sha256(password.encode('utf-8')).digest()
+    # Encode as base64 for a consistent format (44 characters, well under 72 bytes)
+    return base64.b64encode(sha_hash).decode('utf-8')
+
+
+def needs_password_rehash(plain_password: str, hashed_password: str) -> bool:
+    """
+    Check if a password was hashed with the old method (without SHA-256 pre-hashing)
+    and needs to be re-hashed with the new method.
+    """
+    try:
+        # Try to verify with new method
+        pre_hashed = _pre_hash_password(plain_password)
+        if pwd_context.verify(pre_hashed, hashed_password):
+            # Already using new method
+            return False
+        
+        # Check if it verifies with old method (needs rehashing)
+        password_bytes = plain_password.encode('utf-8')
+        if len(password_bytes) <= 72:
+            if pwd_context.verify(plain_password, hashed_password):
+                # Using old method, needs rehashing
+                return True
+        
+        return False
+    except Exception:
+        return False
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
-    Verify a plain password against its hash with proper 72-byte limit handling
+    Verify a plain password against its hash using SHA-256 pre-hashing + bcrypt.
+    This handles passwords of any length.
+    
+    For backward compatibility, if the new method fails, it tries the old method
+    (direct bcrypt without pre-hashing) for existing users.
     """
     try:
-        # Bcrypt has a 72-byte limit for passwords, not character limit
-        password_bytes = plain_password.encode('utf-8')
-        if len(password_bytes) > 72:
-            # Truncate to 72 bytes, but be careful not to break UTF-8 encoding
-            password_bytes = password_bytes[:72]
-            # Find the last complete UTF-8 character
-            while password_bytes and password_bytes[-1] & 0x80 and password_bytes[-1] & 0x40 == 0:
-                password_bytes = password_bytes[:-1]
-            plain_password = password_bytes.decode('utf-8', errors='ignore')
+        # First try the new method (SHA-256 + bcrypt)
+        pre_hashed = _pre_hash_password(plain_password)
+        if pwd_context.verify(pre_hashed, hashed_password):
+            return True
         
-        # Use direct bcrypt to avoid passlib warnings
-        import bcrypt
-        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+        # For backward compatibility: try old method (direct bcrypt)
+        # This allows existing users to log in
+        password_bytes = plain_password.encode('utf-8')
+        if len(password_bytes) <= 72:
+            # Only try old method if password is within bcrypt limits
+            if pwd_context.verify(plain_password, hashed_password):
+                print(f"⚠️ Password verified with legacy method - should be re-hashed")
+                return True
+        
+        return False
+        
     except Exception as e:
         print(f"Password verification error: {e}")
-        # Fallback to passlib if direct bcrypt fails
-        try:
-            return pwd_context.verify(plain_password, hashed_password)
-        except Exception as e2:
-            print(f"Password verification fallback error: {e2}")
-            return False
+        return False
 
 
 def get_password_hash(password: str) -> str:
     """
-    Hash a password with robust error handling and proper 72-byte limit handling
+    Hash a password using SHA-256 pre-hashing + bcrypt.
+    This handles passwords of any length securely.
     """
     try:
         # Validate password input
         if not password or not isinstance(password, str):
             raise ValueError("Password must be a non-empty string")
         
-        # Bcrypt has a 72-byte limit for passwords, not character limit
-        password_bytes = password.encode('utf-8')
-        if len(password_bytes) > 72:
-            # Truncate to 72 bytes, but be careful not to break UTF-8 encoding
-            password_bytes = password_bytes[:72]
-            # Find the last complete UTF-8 character
-            while password_bytes and password_bytes[-1] & 0x80 and password_bytes[-1] & 0x40 == 0:
-                password_bytes = password_bytes[:-1]
-            password = password_bytes.decode('utf-8', errors='ignore')
+        # Pre-hash the password with SHA-256 to handle any length
+        pre_hashed = _pre_hash_password(password)
         
-        # Generate bcrypt hash
-        hashed = pwd_context.hash(password)
+        # Generate bcrypt hash (pre-hashed password is only 44 characters, well under 72 bytes)
+        hashed = pwd_context.hash(pre_hashed)
         
         # Validate the generated hash
         if not hashed or not hashed.startswith('$2b$'):
-            raise ValueError(f"Generated invalid hash: {hashed[:20]}...")
+            raise ValueError(f"Generated invalid hash format")
         
-        # Verify the hash works
-        if not verify_password(password, hashed):
-            raise ValueError("Generated hash verification failed")
-        
-        print(f"✅ Password hashed successfully: {hashed[:20]}...")
         return hashed
         
     except Exception as e:
         print(f"❌ Password hashing error: {e}")
-        # Try with a more lenient approach
-        try:
-            hashed = pwd_context.hash(password)
-            if hashed and hashed.startswith('$2b$'):
-                print(f"✅ Password hashed on retry: {hashed[:20]}...")
-                return hashed
-            else:
-                raise ValueError("Retry produced invalid hash")
-        except Exception as e2:
-            print(f"❌ Password hashing retry error: {e2}")
-            # Last resort: use a different bcrypt configuration
-            try:
-                from passlib.context import CryptContext
-                fallback_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-                hashed = fallback_context.hash(password)
-                if hashed and hashed.startswith('$2b$'):
-                    print(f"✅ Password hashed with fallback: {hashed[:20]}...")
-                    return hashed
-                else:
-                    raise ValueError("Fallback produced invalid hash")
-            except Exception as e3:
-                print(f"❌ All password hashing methods failed: {e3}")
-                raise ValueError(f"Failed to hash password: {str(e3)}")
+        raise ValueError(f"Failed to hash password: {str(e)}")
 
 
 def validate_password(password: str) -> dict:
