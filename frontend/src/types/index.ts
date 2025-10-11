@@ -70,6 +70,8 @@ export interface Department {
   allow_remote_work: boolean;
   working_hours_start?: string;
   working_hours_end?: string;
+  employees_count: number;
+  active_employees_count: number;
   created_at: string;
   updated_at?: string;
 }
