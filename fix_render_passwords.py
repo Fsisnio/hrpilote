@@ -66,7 +66,7 @@ def fix_passwords():
                     user.hashed_password = new_hash
                     user.failed_login_attempts = 0
                     user.locked_until = None
-                    print(f"✅ Reset: {email}")
+                    print(f"✅ Reset & Unlocked: {email}")
                     updated += 1
                 except Exception as e:
                     print(f"❌ Failed: {email} - {e}")
