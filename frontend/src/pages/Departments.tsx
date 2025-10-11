@@ -1,99 +1,107 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
+import { departmentsAPI } from '../services/api';
+import { Department } from '../types';
 
 const Departments: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [summary, setSummary] = useState({
+    total_departments: 0,
+    total_employees: 0,
+    total_budget: 0,
+    average_budget: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const departments = [
-    {
-      id: 1,
-      name: 'Engineering',
-      code: 'ENG',
-      description: 'Software development and technical operations',
-      status: 'ACTIVE',
-      employeeCount: 45,
-      budget: 2500000,
-      location: 'Building A, Floor 3',
-      manager: 'Sarah Johnson',
-      contactEmail: 'engineering@company.com',
-      contactPhone: '+1-555-0123'
-    },
-    {
-      id: 2,
-      name: 'Marketing',
-      code: 'MKT',
-      description: 'Brand management and digital marketing',
-      status: 'ACTIVE',
-      employeeCount: 28,
-      budget: 1800000,
-      location: 'Building B, Floor 2',
-      manager: 'Michael Chen',
-      contactEmail: 'marketing@company.com',
-      contactPhone: '+1-555-0124'
-    },
-    {
-      id: 3,
-      name: 'Sales',
-      code: 'SLS',
-      description: 'Customer acquisition and revenue generation',
-      status: 'ACTIVE',
-      employeeCount: 35,
-      budget: 2200000,
-      location: 'Building A, Floor 1',
-      manager: 'Emily Rodriguez',
-      contactEmail: 'sales@company.com',
-      contactPhone: '+1-555-0125'
-    },
-    {
-      id: 4,
-      name: 'Human Resources',
-      code: 'HR',
-      description: 'Employee relations and talent management',
-      status: 'ACTIVE',
-      employeeCount: 12,
-      budget: 800000,
-      location: 'Building C, Floor 1',
-      manager: 'David Thompson',
-      contactEmail: 'hr@company.com',
-      contactPhone: '+1-555-0126'
-    },
-    {
-      id: 5,
-      name: 'Finance',
-      code: 'FIN',
-      description: 'Financial planning and accounting',
-      status: 'ACTIVE',
-      employeeCount: 18,
-      budget: 1200000,
-      location: 'Building C, Floor 2',
-      manager: 'Lisa Wang',
-      contactEmail: 'finance@company.com',
-      contactPhone: '+1-555-0127'
-    },
-    {
-      id: 6,
-      name: 'Operations',
-      code: 'OPS',
-      description: 'Business operations and process improvement',
-      status: 'ACTIVE',
-      employeeCount: 22,
-      budget: 1500000,
-      location: 'Building B, Floor 1',
-      manager: 'Robert Kim',
-      contactEmail: 'operations@company.com',
-      contactPhone: '+1-555-0128'
+  useEffect(() => {
+    fetchDepartments();
+    fetchSummary();
+  }, []);
+
+  const fetchDepartments = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await departmentsAPI.getDepartments({
+        search: searchTerm || undefined
+      });
+      
+      setDepartments(response.data);
+    } catch (err: any) {
+      console.error('Error fetching departments:', err);
+      setError(err.response?.data?.detail || 'Failed to fetch departments');
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  const fetchSummary = async () => {
+    try {
+      const response = await departmentsAPI.getDepartmentsSummary();
+      setSummary(response.data);
+    } catch (err: any) {
+      console.error('Error fetching departments summary:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (searchTerm !== '') {
+      const timeoutId = setTimeout(() => {
+        fetchDepartments();
+      }, 500); // Debounce search
+      
+      return () => clearTimeout(timeoutId);
+    } else {
+      fetchDepartments();
+    }
+  }, [searchTerm]);
 
   const filteredDepartments = departments.filter(dept =>
     dept.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     dept.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    dept.description.toLowerCase().includes(searchTerm.toLowerCase())
+    (dept.description && dept.description.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const totalEmployees = departments.reduce((sum, dept) => sum + dept.employeeCount, 0);
-  const totalBudget = departments.reduce((sum, dept) => sum + dept.budget, 0);
-  const averageBudget = totalBudget / departments.length;
+  if (loading && departments.length === 0) {
+    return (
+      <Layout>
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (error) {
+    return (
+      <Layout>
+        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <span className="text-red-400 text-xl">⚠️</span>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800">Error loading departments</h3>
+              <p className="mt-1 text-sm text-red-700">{error}</p>
+              <button
+                onClick={() => {
+                  setError(null);
+                  fetchDepartments();
+                  fetchSummary();
+                }}
+                className="mt-2 bg-red-100 hover:bg-red-200 text-red-800 px-3 py-1 rounded text-sm"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -118,7 +126,7 @@ const Departments: React.FC = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Departments</p>
-                <p className="text-2xl font-semibold text-gray-900">{departments.length}</p>
+                <p className="text-2xl font-semibold text-gray-900">{summary.total_departments}</p>
               </div>
             </div>
           </div>
@@ -129,7 +137,7 @@ const Departments: React.FC = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Employees</p>
-                <p className="text-2xl font-semibold text-gray-900">{totalEmployees}</p>
+                <p className="text-2xl font-semibold text-gray-900">{summary.total_employees}</p>
               </div>
             </div>
           </div>
@@ -140,7 +148,7 @@ const Departments: React.FC = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Budget</p>
-                <p className="text-2xl font-semibold text-gray-900">${(totalBudget / 1000000).toFixed(1)}M</p>
+                <p className="text-2xl font-semibold text-gray-900">${(summary.total_budget / 1000000).toFixed(1)}M</p>
               </div>
             </div>
           </div>
@@ -151,7 +159,7 @@ const Departments: React.FC = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Avg. Budget</p>
-                <p className="text-2xl font-semibold text-gray-900">${(averageBudget / 1000).toFixed(0)}K</p>
+                <p className="text-2xl font-semibold text-gray-900">${(summary.average_budget / 1000).toFixed(0)}K</p>
               </div>
             </div>
           </div>
@@ -205,30 +213,36 @@ const Departments: React.FC = () => {
                 <div className="space-y-3 mb-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Employees:</span>
-                    <span className="font-medium">{dept.employeeCount}</span>
+                    <span className="font-medium">{dept.active_employees_count}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Budget:</span>
-                    <span className="font-medium">${(dept.budget / 1000).toFixed(0)}K</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Manager:</span>
-                    <span className="font-medium">{dept.manager}</span>
+                    <span className="font-medium">${dept.budget ? (dept.budget / 1000).toFixed(0) + 'K' : 'N/A'}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Location:</span>
-                    <span className="font-medium">{dept.location}</span>
+                    <span className="font-medium">{dept.location || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Remote Work:</span>
+                    <span className="font-medium">{dept.allow_remote_work ? 'Allowed' : 'Not Allowed'}</span>
                   </div>
                 </div>
 
-                <div className="border-t pt-4">
-                  <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-                    <span>📧 {dept.contactEmail}</span>
+                {(dept.contact_email || dept.contact_phone) && (
+                  <div className="border-t pt-4">
+                    {dept.contact_email && (
+                      <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+                        <span>📧 {dept.contact_email}</span>
+                      </div>
+                    )}
+                    {dept.contact_phone && (
+                      <div className="flex items-center justify-between text-sm text-gray-600">
+                        <span>📞 {dept.contact_phone}</span>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center justify-between text-sm text-gray-600">
-                    <span>📞 {dept.contactPhone}</span>
-                  </div>
-                </div>
+                )}
 
                 {/* Actions */}
                 <div className="mt-4 pt-4 border-t flex space-x-2">
@@ -268,9 +282,11 @@ const Departments: React.FC = () => {
                     <div className="flex-1">
                       <div className="flex items-center space-x-4">
                         <div className="w-32 font-medium text-gray-900">{dept.name}</div>
-                        <div className="text-sm text-gray-500">{dept.manager}</div>
-                        <div className="text-sm text-gray-500">{dept.employeeCount} employees</div>
-                        <div className="text-sm text-gray-500">${(dept.budget / 1000).toFixed(0)}K budget</div>
+                        <div className="text-sm text-gray-500">{dept.active_employees_count} employees</div>
+                        <div className="text-sm text-gray-500">
+                          {dept.budget ? `$${(dept.budget / 1000).toFixed(0)}K budget` : 'No budget set'}
+                        </div>
+                        <div className="text-sm text-gray-500">{dept.location || 'No location'}</div>
                       </div>
                     </div>
                   </div>

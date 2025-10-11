@@ -96,7 +96,7 @@ async def cors_test():
 
 # Include API routers with error handling
 try:
-    from app.api.v1 import auth, users, organizations, employees, attendance, leave, payroll, reports, documents, training, expenses, init
+    from app.api.v1 import auth, users, organizations, employees, attendance, leave, payroll, reports, documents, training, expenses, departments, init
     
     app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
     app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
@@ -109,6 +109,7 @@ try:
     app.include_router(documents.router, prefix="/api/v1/documents", tags=["Documents"])
     app.include_router(training.router, prefix="/api/v1/training", tags=["Training"])
     app.include_router(expenses.router, prefix="/api/v1/expenses", tags=["Expenses"])
+    app.include_router(departments.router, prefix="/api/v1/departments", tags=["Departments"])
     app.include_router(init.router, prefix="/api/v1", tags=["Database Initialization"])
     
     logger.info("All API routers loaded successfully")

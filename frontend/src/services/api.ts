@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3003/api/v1';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://hrpiloteback.onrender.com/api/v1';
 
 // Create axios instance
 const api = axios.create({
@@ -302,6 +302,27 @@ export const expensesAPI = {
   
   // Expense Reports
   getExpenseReports: (params?: any) => api.get('/expenses/reports', { params }),
+};
+
+// Departments API
+export const departmentsAPI = {
+  // Get all departments
+  getDepartments: (params?: any) => api.get('/departments', { params }),
+  
+  // Get department summary
+  getDepartmentsSummary: () => api.get('/departments/summary'),
+  
+  // Get single department
+  getDepartment: (id: number) => api.get(`/departments/${id}`),
+  
+  // Create department
+  createDepartment: (data: any) => api.post('/departments', data),
+  
+  // Update department
+  updateDepartment: (id: number, data: any) => api.put(`/departments/${id}`, data),
+  
+  // Delete department
+  deleteDepartment: (id: number) => api.delete(`/departments/${id}`),
 };
 
 export default api; 
