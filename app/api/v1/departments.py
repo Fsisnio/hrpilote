@@ -8,8 +8,8 @@ from app.core.database import get_db
 from app.api.v1.auth import get_current_user
 from app.models.user import User, UserRole
 from app.models.department import Department, DepartmentStatus
-from app.models.employee import Employee, EmployeeStatus
 from app.models.organization import Organization
+from app.models.employee import Employee, EmployeeStatus
 
 router = APIRouter()
 
@@ -115,6 +115,15 @@ async def get_departments(
     # Add employee counts to each department
     result = []
     for dept in departments:
+        # Calculate employee counts directly
+        total_employees = db.query(Employee).filter(Employee.department_id == dept.id).count()
+        active_employees = db.query(Employee).filter(
+            and_(
+                Employee.department_id == dept.id,
+                Employee.status == EmployeeStatus.ACTIVE
+            )
+        ).count()
+        
         dept_dict = {
             "id": dept.id,
             "name": dept.name,
@@ -131,8 +140,8 @@ async def get_departments(
             "allow_remote_work": dept.allow_remote_work,
             "working_hours_start": dept.working_hours_start,
             "working_hours_end": dept.working_hours_end,
-            "employees_count": dept.active_employees_count,
-            "active_employees_count": dept.active_employees_count,
+            "employees_count": total_employees,
+            "active_employees_count": active_employees,
             "created_at": dept.created_at.isoformat() if dept.created_at else "",
             "updated_at": dept.updated_at.isoformat() if dept.updated_at else None
         }
@@ -165,7 +174,13 @@ async def get_departments_summary(
     active_departments = query.filter(Department.status == DepartmentStatus.ACTIVE).all()
     
     total_departments = len(active_departments)
-    total_employees = sum(dept.active_employees_count for dept in active_departments)
+    # Calculate total employees across all departments
+    total_employees = db.query(Employee).filter(
+        and_(
+            Employee.department_id.in_([dept.id for dept in active_departments]),
+            Employee.status == EmployeeStatus.ACTIVE
+        )
+    ).count()
     total_budget = sum(dept.budget or 0 for dept in active_departments)
     average_budget = total_budget // total_departments if total_departments > 0 else 0
     
@@ -225,8 +240,8 @@ async def get_department(
         allow_remote_work=department.allow_remote_work,
         working_hours_start=department.working_hours_start,
         working_hours_end=department.working_hours_end,
-        employees_count=department.active_employees_count,
-        active_employees_count=department.active_employees_count,
+        employees_count=0,  # Will be calculated separately
+        active_employees_count=0,  # Will be calculated separately
         created_at=department.created_at.isoformat() if department.created_at else "",
         updated_at=department.updated_at.isoformat() if department.updated_at else None
     )
@@ -296,8 +311,8 @@ async def create_department(
         allow_remote_work=department.allow_remote_work,
         working_hours_start=department.working_hours_start,
         working_hours_end=department.working_hours_end,
-        employees_count=department.active_employees_count,
-        active_employees_count=department.active_employees_count,
+        employees_count=0,  # Will be calculated separately
+        active_employees_count=0,  # Will be calculated separately
         created_at=department.created_at.isoformat() if department.created_at else "",
         updated_at=department.updated_at.isoformat() if department.updated_at else None
     )
@@ -374,8 +389,8 @@ async def update_department(
         allow_remote_work=department.allow_remote_work,
         working_hours_start=department.working_hours_start,
         working_hours_end=department.working_hours_end,
-        employees_count=department.active_employees_count,
-        active_employees_count=department.active_employees_count,
+        employees_count=0,  # Will be calculated separately
+        active_employees_count=0,  # Will be calculated separately
         created_at=department.created_at.isoformat() if department.created_at else "",
         updated_at=department.updated_at.isoformat() if department.updated_at else None
     )
@@ -412,7 +427,14 @@ async def delete_department(
         )
     
     # Check if department has active employees
-    if department.active_employees_count > 0:
+    active_employees_count = db.query(Employee).filter(
+        and_(
+            Employee.department_id == department.id,
+            Employee.status == EmployeeStatus.ACTIVE
+        )
+    ).count()
+    
+    if active_employees_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete department with active employees. Please reassign employees first."
