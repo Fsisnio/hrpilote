@@ -313,7 +313,7 @@ async def get_employees(
         # Employees can only see their own record
         employee = db.query(Employee).filter(Employee.user_id == current_user.id).first()
         if not employee:
-            raise HTTPException(status_code=404, detail="Employee profile not found")
+            raise HTTPException(status_code=404, detail="Please, use your employee profile")
         query = query.filter(Employee.id == employee.id)
     else:
         # Manager, HR, Director, and other roles can only see employees in their organization

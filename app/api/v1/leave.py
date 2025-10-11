@@ -85,7 +85,7 @@ async def get_leave_requests(
         # Employees can only see their own requests
         employee = db.query(Employee).filter(Employee.user_id == current_user.id).first()
         if not employee:
-            raise HTTPException(status_code=404, detail="Employee profile not found")
+            raise HTTPException(status_code=404, detail="Please, use your employee profile")
         query = query.filter(LeaveRequest.employee_id == employee.id)
     elif current_user.role == UserRole.MANAGER:
         # Managers can see requests from their organization
@@ -301,7 +301,7 @@ async def get_leave_balances(
     if current_user.role == UserRole.EMPLOYEE:
         employee = db.query(Employee).filter(Employee.user_id == current_user.id).first()
         if not employee:
-            raise HTTPException(status_code=404, detail="Employee profile not found")
+            raise HTTPException(status_code=404, detail="Please, use your employee profile")
         target_employee_id = employee.id
     elif not target_employee_id:
         raise HTTPException(status_code=400, detail="Employee ID is required")
@@ -399,14 +399,14 @@ async def get_leave_balances_summary(
         # Employees can only see their own balances
         employee = db.query(Employee).filter(Employee.user_id == current_user.id).first()
         if not employee:
-            raise HTTPException(status_code=404, detail="Employee profile not found")
+            raise HTTPException(status_code=404, detail="Please, use your employee profile")
         organization_id = employee.organization_id
         employee_id = employee.id
     else:
         # Other roles (HR, Manager, etc.) can see organization summary
         employee = db.query(Employee).filter(Employee.user_id == current_user.id).first()
         if not employee:
-            raise HTTPException(status_code=404, detail="Employee profile not found")
+            raise HTTPException(status_code=404, detail="Please, use your employee profile")
         organization_id = employee.organization_id
         employee_id = None
     
@@ -466,7 +466,7 @@ async def get_leave_policies(
     # Get employee's organization
     employee = db.query(Employee).filter(Employee.user_id == current_user.id).first()
     if not employee:
-        raise HTTPException(status_code=404, detail="Employee profile not found")
+        raise HTTPException(status_code=404, detail="Please, use your employee profile")
     
     policies = db.query(LeavePolicy).filter(
         and_(
