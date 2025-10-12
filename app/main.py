@@ -21,6 +21,51 @@ async def lifespan(app: FastAPI):
     try:
         create_tables()
         logger.info("Database tables created successfully")
+        
+        # Create production admin user if it doesn't exist
+        try:
+            from app.core.database import SessionLocal
+            from app.models.user import User, UserRole, UserStatus
+            from app.core.security import get_password_hash
+            
+            db = SessionLocal()
+            try:
+                # Check if production admin exists
+                admin_user = db.query(User).filter(User.email == "fala@gmail.com").first()
+                
+                if not admin_user:
+                    logger.info("Creating production super admin user...")
+                    admin_user = User(
+                        email="fala@gmail.com",
+                        username="fala",
+                        first_name="Fala",
+                        last_name="Admin",
+                        hashed_password=get_password_hash("Jesus1993."),
+                        role=UserRole.SUPER_ADMIN,
+                        status=UserStatus.ACTIVE,
+                        organization_id=None,  # Super admin can access all organizations
+                        department_id=None,
+                        manager_id=None,
+                        is_email_verified=True,
+                        is_active=True
+                    )
+                    db.add(admin_user)
+                    db.commit()
+                    logger.info("✅ Production super admin created: fala@gmail.com")
+                else:
+                    # Update password to ensure it's correct
+                    admin_user.hashed_password = get_password_hash("Jesus1993.")
+                    db.commit()
+                    logger.info("✅ Production super admin password updated: fala@gmail.com")
+                    
+            except Exception as e:
+                logger.error(f"Failed to create production admin: {e}")
+            finally:
+                db.close()
+                
+        except Exception as e:
+            logger.error(f"Failed to setup production admin: {e}")
+            
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
         raise
