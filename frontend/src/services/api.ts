@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://hrpiloteback.onrender.com/api/v1';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000/api/v1';
 
 // Create axios instance
 const api = axios.create({
@@ -8,6 +8,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000, // 30 second timeout
 });
 
 // Add request interceptor to include auth token
@@ -24,10 +25,30 @@ api.interceptors.request.use(
   }
 );
 
-// Add response interceptor to handle token refresh
+// Add response interceptor to handle token refresh and network errors
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    console.log('🔍 API Error:', error);
+    
+    // Handle network errors
+    if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+      console.error('❌ Network Error:', error);
+      
+      // Check if backend is reachable
+      try {
+        await axios.get(`${API_BASE_URL.replace('/api/v1', '')}/`);
+        console.log('✅ Backend is reachable, retrying request...');
+        
+        // Retry the original request once
+        return api.request(error.config);
+      } catch (networkError) {
+        console.error('❌ Backend is not reachable:', networkError);
+        throw new Error('Unable to connect to server. Please check your internet connection and try again.');
+      }
+    }
+    
+    // Handle token expiration
     if (error.response?.status === 401) {
       // Token expired, try to refresh
       const refreshToken = localStorage.getItem('refresh_token');
@@ -55,6 +76,7 @@ api.interceptors.response.use(
         }
       }
     }
+    
     return Promise.reject(error);
   }
 );
