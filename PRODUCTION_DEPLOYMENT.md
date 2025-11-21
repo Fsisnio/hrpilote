@@ -67,7 +67,7 @@ Run the password reset script on Render to immediately update all admin password
 - ✅ Guaranteed working credentials
 
 **Cons:**
-- ⚠️ Resets passwords to default (Password123!)
+- ⚠️ Resets passwords to default (Jesus1993@)
 - ⚠️ Users need to change passwords after
 
 ### 3. 🧪 Verification
@@ -78,7 +78,7 @@ Run the password reset script on Render to immediately update all admin password
 2. Login with:
    ```
    Email:    superadmin@hrpilot.com
-   Password: Password123!
+   Password: Jesus1993@
    ```
 
 3. **If login fails**, run the password reset script:
@@ -131,6 +131,8 @@ python scripts/reset_production_passwords.py
 - Old passwords should still work
 - If not, run password reset script
 - Check database connection
+- Verify the Render service has `DATABASE_SSL_MODE=require` (and optionally
+  `DATABASE_SSL_ROOT_CERT`) so the backend can negotiate TLS with Postgres.
 
 ## Files Changed
 

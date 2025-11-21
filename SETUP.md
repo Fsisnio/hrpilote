@@ -57,6 +57,10 @@ nano .env
 ```env
 # Database (update with your credentials)
 DATABASE_URL=postgresql://username:password@localhost:5432/hrpilot_db
+# Optional: required when connecting to managed Postgres instances that force TLS
+# For Render, set DATABASE_SSL_MODE=require
+# DATABASE_SSL_MODE=require
+# DATABASE_SSL_ROOT_CERT=/etc/ssl/certs/ca-certificates.crt
 
 # Security (generate secure keys)
 SECRET_KEY=your-super-secret-key-here
@@ -95,7 +99,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 🔑 Default Accounts
 
-All accounts use password: `Password123!`
+All accounts use password: `Jesus1993@`
 
 | Role | Email | Description |
 |------|-------|-------------|
@@ -150,6 +154,8 @@ The system uses PostgreSQL with SQLAlchemy ORM. Key settings:
 
 ```env
 DATABASE_URL=postgresql://username:password@localhost:5432/hrpilot_db
+# DATABASE_SSL_MODE=require
+# DATABASE_SSL_ROOT_CERT=/etc/ssl/certs/ca-certificates.crt
 ```
 
 ### Security Configuration
