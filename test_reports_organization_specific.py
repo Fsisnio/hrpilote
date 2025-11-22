@@ -19,7 +19,7 @@ def test_reports_organization_specific():
     
     # Manager credentials
     email = "manager@hrpilot.com"
-    password = "Jesus1993."
+    password = "Jesus1993@"
     
     # Login as manager
     print(f"📧 Logging in as: {email}")

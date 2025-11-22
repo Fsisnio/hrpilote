@@ -50,12 +50,12 @@ const Login: React.FC = () => {
 
   const handleDemoLogin = async (demoEmail: string) => {
     setEmail(demoEmail);
-    setPassword('Password123!');
+    setPassword('Jesus1993@');
     setError('');
     setLoading(true);
 
     try {
-      await login(demoEmail, 'Password123!');
+      await login(demoEmail, 'Jesus1993@');
       navigate('/dashboard');
     } catch (err: any) {
       setError('Demo login failed. Please try again.');
@@ -269,7 +269,7 @@ const Login: React.FC = () => {
             </div>
             <div className="mt-4 text-center">
               <p className="text-xs text-gray-500">
-                Password: <span className="font-mono bg-gray-100 px-2 py-1 rounded">Password123!</span>
+                Password: <span className="font-mono bg-gray-100 px-2 py-1 rounded">Jesus1993@</span>
               </p>
             </div>
           </div>

@@ -2,34 +2,13 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
-from enum import Enum
 
-# Enums
-class CourseType(str, Enum):
-    ONLINE = "ONLINE"
-    IN_PERSON = "IN_PERSON"
-    HYBRID = "HYBRID"
-    SELF_PACED = "SELF_PACED"
-
-class CourseStatus(str, Enum):
-    DRAFT = "DRAFT"
-    ACTIVE = "ACTIVE"
-    ARCHIVED = "ARCHIVED"
-
-class EnrollmentStatus(str, Enum):
-    PENDING = "PENDING"
-    ENROLLED = "ENROLLED"
-    IN_PROGRESS = "IN_PROGRESS"
-    COMPLETED = "COMPLETED"
-    DROPPED = "DROPPED"
-    FAILED = "FAILED"
-
-class AssessmentType(str, Enum):
-    QUIZ = "QUIZ"
-    EXAM = "EXAM"
-    ASSIGNMENT = "ASSIGNMENT"
-    PRESENTATION = "PRESENTATION"
-    PRACTICAL = "PRACTICAL"
+from app.models.enums import (
+    AssessmentType,
+    CourseStatus,
+    CourseType,
+    EnrollmentStatus,
+)
 
 # Course Schemas
 class CourseBase(BaseModel):
@@ -83,9 +62,9 @@ class CourseUpdate(BaseModel):
     is_mandatory: Optional[bool] = None
 
 class CourseResponse(CourseBase):
-    id: int
-    organization_id: int
-    instructor_id: Optional[int] = None
+    id: str
+    organization_id: str
+    instructor_id: Optional[str] = None
     status: CourseStatus
     created_at: datetime
     updated_at: datetime
@@ -97,8 +76,8 @@ class CourseResponse(CourseBase):
 
 # Enrollment Schemas
 class EnrollmentBase(BaseModel):
-    course_id: int
-    employee_id: int
+    course_id: str
+    employee_id: str
     enrollment_date: Optional[datetime] = None
     start_date: Optional[date] = None
     notes: Optional[str] = None
@@ -115,8 +94,8 @@ class EnrollmentUpdate(BaseModel):
     notes: Optional[str] = None
 
 class EnrollmentResponse(EnrollmentBase):
-    id: int
-    organization_id: int
+    id: str
+    organization_id: str
     status: EnrollmentStatus
     completion_date: Optional[date] = None
     final_score: float = 0.0
@@ -131,11 +110,11 @@ class EnrollmentResponse(EnrollmentBase):
         from_attributes = True
 
 class SelfEnrollmentRequest(BaseModel):
-    course_id: int = Field(..., gt=0, description="ID of the course to enroll in")
+    course_id: str = Field(..., description="ID of the course to enroll in")
 
 # Assessment Schemas
 class AssessmentBase(BaseModel):
-    course_id: int
+    course_id: str
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     assessment_type: AssessmentType
@@ -170,7 +149,7 @@ class AssessmentUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 class AssessmentResponse(AssessmentBase):
-    id: int
+    id: str
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -181,8 +160,8 @@ class AssessmentResponse(AssessmentBase):
 
 # Assessment Result Schemas
 class AssessmentResultBase(BaseModel):
-    assessment_id: int
-    enrollment_id: int
+    assessment_id: str
+    enrollment_id: str
     score: float = Field(..., ge=0)
     max_score: float = Field(100.0, ge=0)
     percentage: float = Field(..., ge=0, le=100)
@@ -204,9 +183,9 @@ class AssessmentResultUpdate(BaseModel):
     feedback: Optional[str] = None
 
 class AssessmentResultResponse(AssessmentResultBase):
-    id: int
-    employee_id: int
-    graded_by: Optional[int] = None
+    id: str
+    employee_id: str
+    graded_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     assessment_title: str
@@ -228,7 +207,7 @@ class TrainingSummary(BaseModel):
 
 # Course Statistics
 class CourseStatistics(BaseModel):
-    course_id: int
+    course_id: str
     course_title: str
     total_enrollments: int
     completed_enrollments: int

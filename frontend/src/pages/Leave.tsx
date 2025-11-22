@@ -153,7 +153,7 @@ const Leave: React.FC = () => {
         console.error('Error data:', err.response?.data);
         // Check if it's an employee profile not found error
         if (err.response?.data?.detail && err.response.data.detail.includes('Employee profile not found')) {
-          throw new Error('Please, use your employee profile');
+          throw new Error('Use your employee credential to have access to this feature');
         }
         throw new Error(`Failed to fetch leave balances: ${err.response?.data?.detail || err.message}`);
       }

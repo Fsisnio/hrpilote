@@ -130,9 +130,11 @@ python scripts/reset_production_passwords.py
 **Solution:** Backward compatibility is enabled
 - Old passwords should still work
 - If not, run password reset script
-- Check database connection
-- Verify the Render service has `DATABASE_SSL_MODE=require` (and optionally
-  `DATABASE_SSL_ROOT_CERT`) so the backend can negotiate TLS with Postgres.
+- Check MongoDB connection
+- ✅ **IMPORTANT**: We use MongoDB only (NOT PostgreSQL)
+- Ensure `MONGODB_URI` and `MONGODB_DB_NAME` are set on Render
+- Verify MongoDB Atlas cluster allows connections from Render's IP ranges
+- Check that MongoDB Atlas network access includes `0.0.0.0/0` (or Render's IP ranges)
 
 ## Files Changed
 

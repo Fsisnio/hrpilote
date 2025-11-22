@@ -19,9 +19,9 @@ def start_backend():
     os.chdir(project_dir)
     
     print(f"📁 Working directory: {project_dir}")
-    print(f"🌐 Server will run on: http://localhost:3003")
-    print(f"📚 API Documentation: http://localhost:3003/docs")
-    print(f"🧪 CORS Test endpoint: http://localhost:3003/cors-test")
+    print(f"🌐 Server will run on: http://localhost:3016")
+    print(f"📚 API Documentation: http://localhost:3016/docs")
+    print(f"🧪 CORS Test endpoint: http://localhost:3016/cors-test")
     print()
     
     # Check if virtual environment exists
@@ -42,7 +42,7 @@ def start_backend():
             str(python_path), "-m", "uvicorn", 
             "app.main:app",
             "--host", "0.0.0.0",
-            "--port", "3003",
+            "--port", "3016",
             "--reload",
             "--log-level", "info"
         ]
@@ -63,7 +63,7 @@ def start_backend():
         print("   1. Make sure you're in the correct directory")
         print("   2. Check if all dependencies are installed: pip install -r requirements.txt")
         print("   3. Verify the database is running")
-        print("   4. Check if port 3003 is available")
+        print("   4. Check if port 3016 is available")
         sys.exit(1)
     except Exception as e:
         print(f"❌ Unexpected error: {e}")

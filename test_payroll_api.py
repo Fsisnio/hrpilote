@@ -21,7 +21,7 @@ def test_payroll_api():
     print("\n1️⃣ Testing login...")
     login_data = {
         "email": "admin@techcorp.com",
-        "password": "Password123!"
+        "password": "Jesus1993@"
     }
     
     try:
@@ -203,7 +203,7 @@ def main():
         # Get token for update test
         login_data = {
             "email": "admin@techcorp.com",
-            "password": "Password123!"
+            "password": "Jesus1993@"
         }
         
         try:

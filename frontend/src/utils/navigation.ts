@@ -55,14 +55,14 @@ export const navigationItems: NavigationItem[] = [
     name: 'Leave Management',
     href: '/leave',
     icon: '📅',
-    roles: [UserRole.ORG_ADMIN, UserRole.HR, UserRole.MANAGER, UserRole.DIRECTOR, UserRole.EMPLOYEE],
+    roles: [UserRole.HR, UserRole.MANAGER, UserRole.DIRECTOR, UserRole.EMPLOYEE],
     description: 'Manage leave requests'
   },
   {
     name: 'Payroll',
     href: '/payroll',
     icon: '💰',
-    roles: [UserRole.PAYROLL],
+    roles: [UserRole.PAYROLL, UserRole.HR, UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN],
     description: 'Manage payroll'
   },
   {

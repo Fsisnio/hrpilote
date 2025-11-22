@@ -1,27 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
 from typing import List, Optional
 from pydantic import BaseModel
+from beanie import PydanticObjectId
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.core.database import get_db
+from app.core.mongo import get_mongo_db
 from app.api.v1.auth import get_current_user
-from app.models.user import User, UserRole
-from app.models.department import Department, DepartmentStatus
-from app.models.organization import Organization
-from app.models.employee import Employee, EmployeeStatus
+from app.models.enums import UserRole, DepartmentStatus, EmployeeStatus
+from app.models.mongo_models import DepartmentDocument, EmployeeDocument, UserDocument
 
 router = APIRouter()
 
 # Response models
 class DepartmentResponse(BaseModel):
-    id: int
+    id: str
     name: str
     code: str
     description: Optional[str]
     status: DepartmentStatus
-    organization_id: int
-    parent_department_id: Optional[int]
+    organization_id: str
+    parent_department_id: Optional[str]
     budget: Optional[int]
     location: Optional[str]
     contact_email: Optional[str]
@@ -48,7 +46,7 @@ class DepartmentCreate(BaseModel):
     name: str
     code: str
     description: Optional[str] = None
-    parent_department_id: Optional[int] = None
+    parent_department_id: Optional[str] = None
     budget: Optional[int] = None
     location: Optional[str] = None
     contact_email: Optional[str] = None
@@ -63,7 +61,7 @@ class DepartmentUpdate(BaseModel):
     code: Optional[str] = None
     description: Optional[str] = None
     status: Optional[DepartmentStatus] = None
-    parent_department_id: Optional[int] = None
+    parent_department_id: Optional[str] = None
     budget: Optional[int] = None
     location: Optional[str] = None
     contact_email: Optional[str] = None
@@ -73,14 +71,38 @@ class DepartmentUpdate(BaseModel):
     working_hours_start: Optional[str] = None
     working_hours_end: Optional[str] = None
 
+def _department_to_response(dept: DepartmentDocument, employees_count: int = 0, active_employees_count: int = 0) -> DepartmentResponse:
+    return DepartmentResponse(
+        id=str(dept.id),
+        name=dept.name,
+        code=dept.code,
+        description=dept.description,
+        status=dept.status,
+        organization_id=str(dept.organization_id),
+        parent_department_id=str(dept.parent_department_id) if dept.parent_department_id else None,
+        budget=dept.budget,
+        location=dept.location,
+        contact_email=dept.contact_email,
+        contact_phone=dept.contact_phone,
+        max_employees=dept.max_employees,
+        allow_remote_work=dept.allow_remote_work,
+        working_hours_start=dept.working_hours_start,
+        working_hours_end=dept.working_hours_end,
+        employees_count=employees_count,
+        active_employees_count=active_employees_count,
+        created_at=dept.created_at.isoformat() if dept.created_at else "",
+        updated_at=dept.updated_at.isoformat() if dept.updated_at else None,
+    )
+
+
 @router.get("/", response_model=List[DepartmentResponse])
 async def get_departments(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     search: Optional[str] = None,
     status_filter: Optional[DepartmentStatus] = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """Get all departments for the user's organization"""
     # Check permissions
@@ -90,69 +112,54 @@ async def get_departments(
             detail="Not authorized to view departments"
         )
     
-    # Set organization filter
-    if current_user.role == UserRole.SUPER_ADMIN:
-        # Super admin can see all departments
-        query = db.query(Department)
-    else:
-        # Other roles can only see departments from their organization
-        query = db.query(Department).filter(Department.organization_id == current_user.organization_id)
-    
-    # Apply filters
+    query = {}
+    if current_user.role != UserRole.SUPER_ADMIN:
+        query["organization_id"] = current_user.organization_id
+
     if status_filter:
-        query = query.filter(Department.status == status_filter)
-    
-    # Search functionality
+        query["status"] = status_filter
+
     if search:
-        query = query.filter(
-            (Department.name.ilike(f"%{search}%")) |
-            (Department.code.ilike(f"%{search}%")) |
-            (Department.description.ilike(f"%{search}%"))
-        )
-    
-    departments = query.offset(skip).limit(limit).all()
-    
-    # Add employee counts to each department
+        query["$or"] = [
+            {"name": {"$regex": search, "$options": "i"}},
+            {"code": {"$regex": search, "$options": "i"}},
+            {"description": {"$regex": search, "$options": "i"}},
+        ]
+
+    departments = await DepartmentDocument.find(query).skip(skip).limit(limit).to_list()
+
+    department_ids = [dept.id for dept in departments]
+    employee_counts = {}
+    if department_ids:
+        pipeline = [
+            {"$match": {"department_id": {"$in": department_ids}}},
+            {
+                "$group": {
+                    "_id": "$department_id",
+                    "total": {"$sum": 1},
+                    "active": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$status", EmployeeStatus.ACTIVE.value]}, 1, 0]
+                        }
+                    },
+                }
+            },
+        ]
+        collection_name = EmployeeDocument.Settings.name
+        async for doc in db[collection_name].aggregate(pipeline):
+            employee_counts[doc["_id"]] = (doc["total"], doc["active"])
+
     result = []
     for dept in departments:
-        # Calculate employee counts directly
-        total_employees = db.query(Employee).filter(Employee.department_id == dept.id).count()
-        active_employees = db.query(Employee).filter(
-            and_(
-                Employee.department_id == dept.id,
-                Employee.status == EmployeeStatus.ACTIVE
-            )
-        ).count()
-        
-        dept_dict = {
-            "id": dept.id,
-            "name": dept.name,
-            "code": dept.code,
-            "description": dept.description,
-            "status": dept.status,
-            "organization_id": dept.organization_id,
-            "parent_department_id": dept.parent_department_id,
-            "budget": dept.budget,
-            "location": dept.location,
-            "contact_email": dept.contact_email,
-            "contact_phone": dept.contact_phone,
-            "max_employees": dept.max_employees,
-            "allow_remote_work": dept.allow_remote_work,
-            "working_hours_start": dept.working_hours_start,
-            "working_hours_end": dept.working_hours_end,
-            "employees_count": total_employees,
-            "active_employees_count": active_employees,
-            "created_at": dept.created_at.isoformat() if dept.created_at else "",
-            "updated_at": dept.updated_at.isoformat() if dept.updated_at else None
-        }
-        result.append(dept_dict)
-    
+        total, active = employee_counts.get(dept.id, (0, 0))
+        result.append(_department_to_response(dept, total, active))
+
     return result
 
 @router.get("/summary", response_model=DepartmentSummary)
 async def get_departments_summary(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """Get departments summary statistics"""
     # Check permissions
@@ -163,24 +170,24 @@ async def get_departments_summary(
         )
     
     # Set organization filter
-    if current_user.role == UserRole.SUPER_ADMIN:
-        # Super admin can see all departments
-        query = db.query(Department)
-    else:
-        # Other roles can only see departments from their organization
-        query = db.query(Department).filter(Department.organization_id == current_user.organization_id)
-    
-    # Get active departments
-    active_departments = query.filter(Department.status == DepartmentStatus.ACTIVE).all()
-    
+    query = {"status": DepartmentStatus.ACTIVE}
+    if current_user.role != UserRole.SUPER_ADMIN:
+        query["organization_id"] = current_user.organization_id
+
+    active_departments = await DepartmentDocument.find(query).to_list()
+
     total_departments = len(active_departments)
-    # Calculate total employees across all departments
-    total_employees = db.query(Employee).filter(
-        and_(
-            Employee.department_id.in_([dept.id for dept in active_departments]),
-            Employee.status == EmployeeStatus.ACTIVE
-        )
-    ).count()
+    department_ids = [dept.id for dept in active_departments]
+
+    total_employees = 0
+    if department_ids:
+        total_employees = await EmployeeDocument.find(
+            {
+                "department_id": {"$in": department_ids},
+                "status": EmployeeStatus.ACTIVE,
+            }
+        ).count()
+
     total_budget = sum(dept.budget or 0 for dept in active_departments)
     average_budget = total_budget // total_departments if total_departments > 0 else 0
     
@@ -193,9 +200,9 @@ async def get_departments_summary(
 
 @router.get("/{department_id}", response_model=DepartmentResponse)
 async def get_department(
-    department_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    department_id: str,
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """Get a specific department by ID"""
     # Check permissions
@@ -206,17 +213,16 @@ async def get_department(
         )
     
     # Set organization filter
-    if current_user.role == UserRole.SUPER_ADMIN:
-        # Super admin can see all departments
-        department = db.query(Department).filter(Department.id == department_id).first()
-    else:
-        # Other roles can only see departments from their organization
-        department = db.query(Department).filter(
-            and_(
-                Department.id == department_id,
-                Department.organization_id == current_user.organization_id
-            )
-        ).first()
+    try:
+        dept_id = PydanticObjectId(department_id)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+
+    department = await DepartmentDocument.get(dept_id)
+
+    if current_user.role != UserRole.SUPER_ADMIN:
+        if not department or department.organization_id != current_user.organization_id:
+            department = None
     
     if not department:
         raise HTTPException(
@@ -224,33 +230,21 @@ async def get_department(
             detail="Department not found"
         )
     
-    return DepartmentResponse(
-        id=department.id,
-        name=department.name,
-        code=department.code,
-        description=department.description,
-        status=department.status,
-        organization_id=department.organization_id,
-        parent_department_id=department.parent_department_id,
-        budget=department.budget,
-        location=department.location,
-        contact_email=department.contact_email,
-        contact_phone=department.contact_phone,
-        max_employees=department.max_employees,
-        allow_remote_work=department.allow_remote_work,
-        working_hours_start=department.working_hours_start,
-        working_hours_end=department.working_hours_end,
-        employees_count=0,  # Will be calculated separately
-        active_employees_count=0,  # Will be calculated separately
-        created_at=department.created_at.isoformat() if department.created_at else "",
-        updated_at=department.updated_at.isoformat() if department.updated_at else None
-    )
+    total_employees = await EmployeeDocument.find(EmployeeDocument.department_id == department.id).count()
+    active_employees = await EmployeeDocument.find(
+        {
+            "department_id": department.id,
+            "status": EmployeeStatus.ACTIVE,
+        }
+    ).count()
+
+    return _department_to_response(department, total_employees, active_employees)
 
 @router.post("/", response_model=DepartmentResponse)
 async def create_department(
     department_data: DepartmentCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """Create a new department"""
     # Check permissions
@@ -261,12 +255,12 @@ async def create_department(
         )
     
     # Check if department code already exists in the organization
-    existing_dept = db.query(Department).filter(
-        and_(
-            Department.code == department_data.code,
-            Department.organization_id == current_user.organization_id
-        )
-    ).first()
+    existing_dept = await DepartmentDocument.find_one(
+        {
+            "code": department_data.code,
+            "organization_id": current_user.organization_id,
+        }
+    )
     
     if existing_dept:
         raise HTTPException(
@@ -275,12 +269,26 @@ async def create_department(
         )
     
     # Create new department
-    department = Department(
+    parent_id = None
+    if department_data.parent_department_id:
+        try:
+            parent_id = PydanticObjectId(department_data.parent_department_id)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid parent department ID")
+
+        parent = await DepartmentDocument.get(parent_id)
+        if not parent or parent.organization_id != current_user.organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Parent department not found in this organization",
+            )
+
+    department = DepartmentDocument(
         name=department_data.name,
         code=department_data.code,
         description=department_data.description,
         organization_id=current_user.organization_id,
-        parent_department_id=department_data.parent_department_id,
+        parent_department_id=parent_id,
         budget=department_data.budget,
         location=department_data.location,
         contact_email=department_data.contact_email,
@@ -288,41 +296,19 @@ async def create_department(
         max_employees=department_data.max_employees,
         allow_remote_work=department_data.allow_remote_work,
         working_hours_start=department_data.working_hours_start,
-        working_hours_end=department_data.working_hours_end
+        working_hours_end=department_data.working_hours_end,
     )
-    
-    db.add(department)
-    db.commit()
-    db.refresh(department)
-    
-    return DepartmentResponse(
-        id=department.id,
-        name=department.name,
-        code=department.code,
-        description=department.description,
-        status=department.status,
-        organization_id=department.organization_id,
-        parent_department_id=department.parent_department_id,
-        budget=department.budget,
-        location=department.location,
-        contact_email=department.contact_email,
-        contact_phone=department.contact_phone,
-        max_employees=department.max_employees,
-        allow_remote_work=department.allow_remote_work,
-        working_hours_start=department.working_hours_start,
-        working_hours_end=department.working_hours_end,
-        employees_count=0,  # Will be calculated separately
-        active_employees_count=0,  # Will be calculated separately
-        created_at=department.created_at.isoformat() if department.created_at else "",
-        updated_at=department.updated_at.isoformat() if department.updated_at else None
-    )
+
+    await department.insert()
+
+    return _department_to_response(department, 0, 0)
 
 @router.put("/{department_id}", response_model=DepartmentResponse)
 async def update_department(
-    department_id: int,
+    department_id: str,
     department_data: DepartmentUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """Update a department"""
     # Check permissions
@@ -333,15 +319,15 @@ async def update_department(
         )
     
     # Find department
-    if current_user.role == UserRole.SUPER_ADMIN:
-        department = db.query(Department).filter(Department.id == department_id).first()
-    else:
-        department = db.query(Department).filter(
-            and_(
-                Department.id == department_id,
-                Department.organization_id == current_user.organization_id
-            )
-        ).first()
+    try:
+        dept_id = PydanticObjectId(department_id)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+
+    department = await DepartmentDocument.get(dept_id)
+    if department and current_user.role != UserRole.SUPER_ADMIN:
+        if department.organization_id != current_user.organization_id:
+            department = None
     
     if not department:
         raise HTTPException(
@@ -351,13 +337,13 @@ async def update_department(
     
     # Check if code is being changed and if it conflicts
     if department_data.code and department_data.code != department.code:
-        existing_dept = db.query(Department).filter(
-            and_(
-                Department.code == department_data.code,
-                Department.organization_id == current_user.organization_id,
-                Department.id != department_id
-            )
-        ).first()
+        existing_dept = await DepartmentDocument.find_one(
+            {
+                "code": department_data.code,
+                "organization_id": department.organization_id,
+                "_id": {"$ne": department.id},
+            }
+        )
         
         if existing_dept:
             raise HTTPException(
@@ -367,39 +353,38 @@ async def update_department(
     
     # Update department
     update_data = department_data.dict(exclude_unset=True)
+
+    if "parent_department_id" in update_data and update_data["parent_department_id"]:
+        try:
+            parent_id = PydanticObjectId(update_data["parent_department_id"])
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid parent department ID")
+
+        parent = await DepartmentDocument.get(parent_id)
+        if not parent or parent.organization_id != department.organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Parent department not found in this organization",
+            )
+        update_data["parent_department_id"] = parent_id
+
     for field, value in update_data.items():
         setattr(department, field, value)
-    
-    db.commit()
-    db.refresh(department)
-    
-    return DepartmentResponse(
-        id=department.id,
-        name=department.name,
-        code=department.code,
-        description=department.description,
-        status=department.status,
-        organization_id=department.organization_id,
-        parent_department_id=department.parent_department_id,
-        budget=department.budget,
-        location=department.location,
-        contact_email=department.contact_email,
-        contact_phone=department.contact_phone,
-        max_employees=department.max_employees,
-        allow_remote_work=department.allow_remote_work,
-        working_hours_start=department.working_hours_start,
-        working_hours_end=department.working_hours_end,
-        employees_count=0,  # Will be calculated separately
-        active_employees_count=0,  # Will be calculated separately
-        created_at=department.created_at.isoformat() if department.created_at else "",
-        updated_at=department.updated_at.isoformat() if department.updated_at else None
-    )
+
+    await department.save()
+
+    total_employees = await EmployeeDocument.find(EmployeeDocument.department_id == department.id).count()
+    active_employees = await EmployeeDocument.find(
+        {"department_id": department.id, "status": EmployeeStatus.ACTIVE}
+    ).count()
+
+    return _department_to_response(department, total_employees, active_employees)
 
 @router.delete("/{department_id}")
 async def delete_department(
-    department_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    department_id: str,
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """Delete a department (soft delete by setting status to INACTIVE)"""
     # Check permissions
@@ -410,15 +395,16 @@ async def delete_department(
         )
     
     # Find department
-    if current_user.role == UserRole.SUPER_ADMIN:
-        department = db.query(Department).filter(Department.id == department_id).first()
-    else:
-        department = db.query(Department).filter(
-            and_(
-                Department.id == department_id,
-                Department.organization_id == current_user.organization_id
-            )
-        ).first()
+    try:
+        dept_id = PydanticObjectId(department_id)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+
+    department = await DepartmentDocument.get(dept_id)
+
+    if department and current_user.role != UserRole.SUPER_ADMIN:
+        if department.organization_id != current_user.organization_id:
+            department = None
     
     if not department:
         raise HTTPException(
@@ -427,11 +413,8 @@ async def delete_department(
         )
     
     # Check if department has active employees
-    active_employees_count = db.query(Employee).filter(
-        and_(
-            Employee.department_id == department.id,
-            Employee.status == EmployeeStatus.ACTIVE
-        )
+    active_employees_count = await EmployeeDocument.find(
+        {"department_id": department.id, "status": EmployeeStatus.ACTIVE}
     ).count()
     
     if active_employees_count > 0:
@@ -442,6 +425,6 @@ async def delete_department(
     
     # Soft delete by setting status to INACTIVE
     department.status = DepartmentStatus.INACTIVE
-    db.commit()
+    await department.save()
     
     return {"message": "Department deleted successfully"}

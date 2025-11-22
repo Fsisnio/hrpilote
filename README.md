@@ -28,7 +28,7 @@ A comprehensive HR management system built with Python FastAPI, supporting multi
 ## 🛠️ Tech Stack
 
 - **Backend**: Python FastAPI
-- **Database**: PostgreSQL with SQLAlchemy
+- **Database**: PostgreSQL with SQLAlchemy (legacy) + MongoDB via Motor/Beanie (migration in progress)
 - **Authentication**: JWT tokens
 - **Frontend**: React with TypeScript
 - **File Storage**: Local/Cloud storage
@@ -56,6 +56,12 @@ pip install -r requirements.txt
 ```bash
 cp .env.example .env
 # Edit .env with your database and email settings
+```
+Make sure to set both relational and MongoDB variables while the migration is underway:
+```env
+DATABASE_URL=postgresql://username:password@localhost:5432/hrpilot_db
+MONGODB_URI=mongodb://localhost:27017/hrpilot
+MONGODB_DB_NAME=hrpilot
 ```
 
 ### 3. Database Setup
@@ -85,7 +91,7 @@ npm start
 
 ## 🔑 Default Accounts
 
-All accounts use password: `Password123!`
+All accounts use password: `Jesus1993@`
 
 - **SUPER_ADMIN**: superadmin@hrpilot.com
 - **ORG_ADMIN**: orgadmin@hrpilot.com

@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
-from app.models.organization import OrganizationStatus
+from app.models.enums import OrganizationStatus
 
 
 class OrganizationBase(BaseModel):
@@ -87,7 +87,7 @@ class OrganizationUpdate(BaseModel):
 
 
 class OrganizationResponse(OrganizationBase):
-    id: int
+    id: str  # MongoDB ObjectId as string
     created_at: datetime
     updated_at: Optional[datetime] = None
     

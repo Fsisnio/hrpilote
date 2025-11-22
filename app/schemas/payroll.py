@@ -1,13 +1,13 @@
 from pydantic import BaseModel, Field
 from typing import Optional
-from decimal import Decimal
 from datetime import datetime
-from app.models.payroll import PayrollStatus
+
+from app.models.enums import PayrollStatus
 
 
 class PayrollRecordCreate(BaseModel):
     """Schema for creating payroll records"""
-    employee_id: int = Field(..., description="Employee ID")
+    employee_id: str = Field(..., description="Employee identifier (ObjectId or employee code)")
     basic_salary: float = Field(..., ge=0, description="Basic salary amount")
     status: PayrollStatus = Field(default=PayrollStatus.PROCESSING, description="Payroll status")
     
@@ -74,8 +74,8 @@ class PayrollSettingsUpdate(BaseModel):
 
 class PayrollSettingsResponse(PayrollSettingsBase):
     """Schema for payroll settings response"""
-    id: int
-    organization_id: int
+    id: Optional[str]
+    organization_id: Optional[str]
     created_at: datetime
     updated_at: datetime
 

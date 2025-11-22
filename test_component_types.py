@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.append('/Users/spero/Desktop/HRP4')
 
-from app.models.payroll import SalaryComponentType
+from app.models.enums import SalaryComponentType
 
 def test_component_types():
     """Test component type enum values"""

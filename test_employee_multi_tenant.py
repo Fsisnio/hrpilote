@@ -1,202 +1,181 @@
 #!/usr/bin/env python3
 """
-Test script to verify that employees can be created with the same employee_id in different organizations.
+Test script to verify multi-tenant employee creation using Mongo.
 """
 
-import sys
+import asyncio
 import os
-from sqlalchemy.orm import Session
-from app.core.database import get_db, SessionLocal
-from app.models.employee import Employee
-from app.models.organization import Organization
-from app.models.user import User, UserRole
-from app.models.department import Department
+import sys
 from datetime import date
+from typing import Tuple
 
-def test_multi_tenant_employee_creation():
-    """Test creating employees with same employee_id in different organizations"""
-    
-    db = SessionLocal()
-    
-    try:
-        print("🧪 Testing multi-tenant employee creation...")
-        
-        # Create two test organizations if they don't exist
-        org1 = db.query(Organization).filter(Organization.name == "Test Org 1").first()
-        if not org1:
-            org1 = Organization(
-                name="Test Org 1",
-                code="TEST1",
-                description="Test organization 1"
-            )
-            db.add(org1)
-            db.commit()
-            db.refresh(org1)
-            print(f"✅ Created organization: {org1.name}")
-        
-        org2 = db.query(Organization).filter(Organization.name == "Test Org 2").first()
-        if not org2:
-            org2 = Organization(
-                name="Test Org 2", 
-                code="TEST2",
-                description="Test organization 2"
-            )
-            db.add(org2)
-            db.commit()
-            db.refresh(org2)
-            print(f"✅ Created organization: {org2.name}")
-        
-        # Create test users if they don't exist
-        user1 = db.query(User).filter(User.email == "test1@example.com").first()
-        if not user1:
-            user1 = User(
-                email="test1@example.com",
-                username="testuser1",
-                first_name="Test",
-                last_name="User1",
-                role=UserRole.EMPLOYEE,
-                organization_id=org1.id,
-                status="ACTIVE"
-            )
-            db.add(user1)
-            db.commit()
-            db.refresh(user1)
-            print(f"✅ Created user: {user1.email}")
-        
-        user2 = db.query(User).filter(User.email == "test2@example.com").first()
-        if not user2:
-            user2 = User(
-                email="test2@example.com",
-                username="testuser2", 
-                first_name="Test",
-                last_name="User2",
-                role=UserRole.EMPLOYEE,
-                organization_id=org2.id,
-                status="ACTIVE"
-            )
-            db.add(user2)
-            db.commit()
-            db.refresh(user2)
-            print(f"✅ Created user: {user2.email}")
-        
-        # Clean up any existing test employees
-        db.query(Employee).filter(Employee.employee_id == "EMP001").delete()
-        db.commit()
-        
-        # Test 1: Create employee in organization 1
-        print("\n📝 Test 1: Creating employee EMP001 in organization 1...")
-        employee1 = Employee(
-            employee_id="EMP001",
-            user_id=user1.id,
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
+from app.core.mongo import init_mongo  # noqa: E402
+from app.core.security import get_password_hash  # noqa: E402
+from app.models.enums import OrganizationStatus, UserRole, EmployeeStatus  # noqa: E402
+from app.models.mongo_models import (  # noqa: E402
+    ALL_DOCUMENT_MODELS,
+    OrganizationDocument,
+    UserDocument,
+    EmployeeDocument,
+)
+
+EMPLOYEE_ID = "EMP001"
+
+
+async def _ensure_orgs_and_users() -> Tuple[Tuple[OrganizationDocument, UserDocument], Tuple[OrganizationDocument, UserDocument]]:
+    await UserDocument.find(
+        {"email": {"$in": ["test1@example.com", "test2@example.com"]}}
+    ).delete()
+
+    org1 = await OrganizationDocument.find_one(OrganizationDocument.code == "TEST1")
+    if not org1:
+        org1 = OrganizationDocument(
+            name="Test Org 1",
+            code="TEST1",
+            description="Test organization 1",
+            status=OrganizationStatus.ACTIVE,
+        )
+        await org1.insert()
+        print(f"✅ Created organization: {org1.name}")
+
+    org2 = await OrganizationDocument.find_one(OrganizationDocument.code == "TEST2")
+    if not org2:
+        org2 = OrganizationDocument(
+            name="Test Org 2",
+            code="TEST2",
+            description="Test organization 2",
+            status=OrganizationStatus.ACTIVE,
+        )
+        await org2.insert()
+        print(f"✅ Created organization: {org2.name}")
+
+    user1 = await UserDocument.find_one(UserDocument.email == "test1@example.com")
+    if not user1:
+        user1 = UserDocument(
+            email="test1@example.com",
+            username="emp_testuser1",
+            hashed_password=get_password_hash("password123"),
+            first_name="Test",
+            last_name="User1",
+            role=UserRole.EMPLOYEE,
             organization_id=org1.id,
-            first_name="John",
-            last_name="Doe",
-            position="Developer",
-            job_title="Software Engineer",
-            hire_date=date.today(),
-            status="ACTIVE"
         )
-        db.add(employee1)
-        db.commit()
-        db.refresh(employee1)
-        print(f"✅ Successfully created employee {employee1.employee_id} in {org1.name}")
-        
-        # Test 2: Create employee with same employee_id in organization 2
-        print("\n📝 Test 2: Creating employee EMP001 in organization 2...")
-        employee2 = Employee(
-            employee_id="EMP001",  # Same employee_id
-            user_id=user2.id,
-            organization_id=org2.id,  # Different organization
-            first_name="Jane",
-            last_name="Smith", 
-            position="Manager",
-            job_title="Project Manager",
-            hire_date=date.today(),
-            status="ACTIVE"
-        )
-        db.add(employee2)
-        db.commit()
-        db.refresh(employee2)
-        print(f"✅ Successfully created employee {employee2.employee_id} in {org2.name}")
-        
-        # Test 3: Try to create duplicate employee_id in same organization (should fail)
-        print("\n📝 Test 3: Attempting to create duplicate EMP001 in organization 1 (should fail)...")
-        try:
-            employee3 = Employee(
-                employee_id="EMP001",  # Same employee_id
-                user_id=user1.id,
-                organization_id=org1.id,  # Same organization
-                first_name="Duplicate",
-                last_name="Employee",
-                position="Tester",
-                job_title="QA Engineer",
-                hire_date=date.today(),
-                status="ACTIVE"
-            )
-            db.add(employee3)
-            db.commit()
-            print("❌ ERROR: Duplicate employee_id was allowed in same organization!")
-            return False
-        except Exception as e:
-            print(f"✅ Correctly prevented duplicate employee_id in same organization: {e}")
-        
-        # Verify the employees exist
-        print("\n🔍 Verifying employees...")
-        emp1_check = db.query(Employee).filter(
-            Employee.employee_id == "EMP001",
-            Employee.organization_id == org1.id
-        ).first()
-        
-        emp2_check = db.query(Employee).filter(
-            Employee.employee_id == "EMP001", 
-            Employee.organization_id == org2.id
-        ).first()
-        
-        if emp1_check and emp2_check:
-            print(f"✅ Employee 1: {emp1_check.employee_id} in {org1.name}")
-            print(f"✅ Employee 2: {emp2_check.employee_id} in {org2.name}")
-            print("\n🎉 Multi-tenant employee creation test PASSED!")
-            return True
-        else:
-            print("❌ Employees not found in database")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        return False
-    finally:
-        db.close()
+        await user1.insert()
+        print(f"✅ Created user: {user1.email}")
 
-def cleanup_test_data():
-    """Clean up test data"""
-    db = SessionLocal()
+    user2 = await UserDocument.find_one(UserDocument.email == "test2@example.com")
+    if not user2:
+        user2 = UserDocument(
+            email="test2@example.com",
+            username="emp_testuser2",
+            hashed_password=get_password_hash("password123"),
+            first_name="Test",
+            last_name="User2",
+            role=UserRole.EMPLOYEE,
+            organization_id=org2.id,
+        )
+        await user2.insert()
+        print(f"✅ Created user: {user2.email}")
+
+    return (org1, user1), (org2, user2)
+
+
+async def test_multi_tenant_employee_creation() -> bool:
+    await init_mongo(document_models=ALL_DOCUMENT_MODELS)
+    print("🧪 Testing multi-tenant employee creation (Mongo)...")
+
+    (org1, user1), (org2, user2) = await _ensure_orgs_and_users()
+
+    await EmployeeDocument.find(EmployeeDocument.employee_id == EMPLOYEE_ID).delete()
+    print("🧹 Cleared existing test employees")
+
+    print("\n📝 Test 1: Creating employee in organization 1...")
+    emp1 = EmployeeDocument(
+        employee_id=EMPLOYEE_ID,
+        user_id=user1.id,
+        organization_id=org1.id,
+        first_name="John",
+        last_name="Doe",
+        position="Developer",
+        job_title="Software Engineer",
+        hire_date=date.today(),
+        status=EmployeeStatus.ACTIVE,
+    )
+    await emp1.insert()
+    print(f"✅ Successfully created employee {emp1.employee_id} in {org1.name}")
+
+    print("\n📝 Test 2: Creating employee with same ID in organization 2...")
+    emp2 = EmployeeDocument(
+        employee_id=EMPLOYEE_ID,
+        user_id=user2.id,
+        organization_id=org2.id,
+        first_name="Jane",
+        last_name="Smith",
+        position="Manager",
+        job_title="Project Manager",
+        hire_date=date.today(),
+        status=EmployeeStatus.ACTIVE,
+    )
+    await emp2.insert()
+    print(f"✅ Successfully created employee {emp2.employee_id} in {org2.name}")
+
+    print("\n📝 Test 3: Attempting duplicate in organization 1 (should fail)...")
+    duplicate = EmployeeDocument(
+        employee_id=EMPLOYEE_ID,
+        user_id=user1.id,
+        organization_id=org1.id,
+        first_name="Duplicate",
+        last_name="Employee",
+        position="Tester",
+        job_title="QA Engineer",
+        hire_date=date.today(),
+        status=EmployeeStatus.ACTIVE,
+    )
     try:
-        print("\n🧹 Cleaning up test data...")
-        
-        # Delete test employees
-        db.query(Employee).filter(Employee.employee_id == "EMP001").delete()
-        
-        # Delete test users
-        db.query(User).filter(User.email.in_(["test1@example.com", "test2@example.com"])).delete()
-        
-        # Delete test organizations
-        db.query(Organization).filter(Organization.name.in_(["Test Org 1", "Test Org 2"])).delete()
-        
-        db.commit()
-        print("✅ Test data cleaned up")
-        
-    except Exception as e:
-        print(f"❌ Cleanup failed: {e}")
-    finally:
-        db.close()
+        await duplicate.insert()
+        print("❌ ERROR: Duplicate employee_id was allowed in same organization!")
+        return False
+    except Exception as exc:
+        print(f"✅ Correctly prevented duplicate employee_id in same organization: {exc}")
 
-if __name__ == "__main__":
+    emp1_check = await EmployeeDocument.find_one(
+        {"employee_id": EMPLOYEE_ID, "organization_id": org1.id}
+    )
+    emp2_check = await EmployeeDocument.find_one(
+        {"employee_id": EMPLOYEE_ID, "organization_id": org2.id}
+    )
+    if emp1_check and emp2_check:
+        print(f"✅ Employee 1: {emp1_check.employee_id} in {org1.name}")
+        print(f"✅ Employee 2: {emp2_check.employee_id} in {org2.name}")
+        print("\n🎉 Multi-tenant employee creation test PASSED!")
+        return True
+
+    print("❌ Employees not found in database")
+    return False
+
+
+async def cleanup_test_data() -> None:
+    await init_mongo(document_models=ALL_DOCUMENT_MODELS)
+    print("\n🧹 Cleaning up test data...")
+    await EmployeeDocument.find(EmployeeDocument.employee_id == EMPLOYEE_ID).delete()
+    await UserDocument.find(UserDocument.email.in_(["test1@example.com", "test2@example.com"])).delete()
+    await OrganizationDocument.find(OrganizationDocument.code.in_(["TEST1", "TEST2"])).delete()
+    print("✅ Test data cleaned up")
+
+
+def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "cleanup":
-        cleanup_test_data()
+        asyncio.run(cleanup_test_data())
     else:
-        success = test_multi_tenant_employee_creation()
+        success = asyncio.run(test_multi_tenant_employee_creation())
         if success:
-            print("\n✅ All tests passed! The multi-tenant employee creation is working correctly.")
+            print("\n✅ All tests passed! Multi-tenant employee creation is working correctly.")
         else:
             print("\n❌ Tests failed! Please check the implementation.")
             sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

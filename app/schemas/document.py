@@ -1,7 +1,8 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from app.models.document import DocumentType, DocumentStatus, DocumentCategory
+
+from app.models.enums import DocumentType, DocumentStatus, DocumentCategory
 
 class DocumentBase(BaseModel):
     title: str
@@ -24,8 +25,8 @@ class DocumentUpdate(BaseModel):
     requires_approval: Optional[bool] = None
 
 class DocumentResponse(DocumentBase):
-    id: int
-    organization_id: int
+    id: str
+    organization_id: str
     file_name: str
     file_path: str
     file_size: int
@@ -33,16 +34,16 @@ class DocumentResponse(DocumentBase):
     file_extension: Optional[str] = None
     version: str
     is_latest_version: bool
-    parent_document_id: Optional[int] = None
-    uploaded_by: int
-    approved_by: Optional[int] = None
+    parent_document_id: Optional[str] = None
+    uploaded_by: str
+    approved_by: Optional[str] = None
     approved_at: Optional[datetime] = None
-    employee_id: Optional[int] = None
-    department_id: Optional[int] = None
+    employee_id: Optional[str] = None
+    department_id: Optional[str] = None
     expiry_date: Optional[datetime] = None
     retention_period_years: int
-    tags: Optional[str] = None
-    document_metadata: Optional[str] = None
+    tags: Optional[list[str]] = None
+    document_metadata: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 

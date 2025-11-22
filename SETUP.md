@@ -62,6 +62,10 @@ DATABASE_URL=postgresql://username:password@localhost:5432/hrpilot_db
 # DATABASE_SSL_MODE=require
 # DATABASE_SSL_ROOT_CERT=/etc/ssl/certs/ca-certificates.crt
 
+# MongoDB (in-progress migration)
+MONGODB_URI=mongodb://localhost:27017/hrpilot
+MONGODB_DB_NAME=hrpilot
+
 # Security (generate secure keys)
 SECRET_KEY=your-super-secret-key-here
 JWT_SECRET_KEY=your-jwt-secret-key-here
@@ -156,6 +160,8 @@ The system uses PostgreSQL with SQLAlchemy ORM. Key settings:
 DATABASE_URL=postgresql://username:password@localhost:5432/hrpilot_db
 # DATABASE_SSL_MODE=require
 # DATABASE_SSL_ROOT_CERT=/etc/ssl/certs/ca-certificates.crt
+MONGODB_URI=mongodb://localhost:27017/hrpilot
+MONGODB_DB_NAME=hrpilot
 ```
 
 ### Security Configuration

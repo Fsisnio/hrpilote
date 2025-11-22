@@ -5,12 +5,16 @@ import json
 
 
 class Settings(BaseSettings):
-    # Database
-    # Use local database in development, production database in production
-    database_url: str = os.getenv("DATABASE_URL", "postgresql://spero@localhost:5432/hrpilot_test_db")
-    database_test_url: str = "postgresql://spero@localhost:5432/hrpilot_test_db"
-    database_ssl_mode: Optional[str] = os.getenv("DATABASE_SSL_MODE")
-    database_ssl_root_cert: Optional[str] = os.getenv("DATABASE_SSL_ROOT_CERT")
+    # Database - MongoDB (PostgreSQL removed, using MongoDB only)
+    mongodb_uri: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017/hrpilot")
+    mongodb_db_name: str = os.getenv("MONGODB_DB_NAME", "hrpilot")
+    
+    # Legacy PostgreSQL settings (deprecated - not used)
+    # Kept for backward compatibility but can be removed
+    # database_url: str = os.getenv("DATABASE_URL", "postgresql://spero@localhost:5432/hrpilot_test_db")
+    # database_test_url: str = "postgresql://spero@localhost:5432/hrpilot_test_db"
+    # database_ssl_mode: Optional[str] = os.getenv("DATABASE_SSL_MODE")
+    # database_ssl_root_cert: Optional[str] = os.getenv("DATABASE_SSL_ROOT_CERT")
     
     # Security
     secret_key: str = os.getenv("SECRET_KEY", "your-super-secret-key-here-change-in-production")
@@ -45,12 +49,14 @@ class Settings(BaseSettings):
         "http://localhost:3001", 
         "http://localhost:3002", 
         "http://localhost:3003", 
+        "http://localhost:3004",
         "http://localhost:3005",
         "http://localhost:8000",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001", 
         "http://127.0.0.1:3002",
         "http://127.0.0.1:3003",
+        "http://127.0.0.1:3004",
         "http://127.0.0.1:3005",
         "http://127.0.0.1:8000",
         # Production URLs

@@ -75,16 +75,16 @@ Successfully tested the multi-tenancy functionality of the HR Pilot system by cr
 
 ### TechCorp Solutions
 ```
-Admin: admin@techcorp.com / Password123!
-HR: hr@techcorp.com / Password123!
-Employee: employee@techcorp.com / Password123!
+Admin: admin@techcorp.com / Jesus1993@
+HR: hr@techcorp.com / Jesus1993@
+Employee: employee@techcorp.com / Jesus1993@
 ```
 
 ### FinanceBank International
 ```
-Admin: admin@financebank.com / Password123!
-HR: hr@financebank.com / Password123!
-Employee: employee@financebank.com / Password123!
+Admin: admin@financebank.com / Jesus1993@
+HR: hr@financebank.com / Jesus1993@
+Employee: employee@financebank.com / Jesus1993@
 ```
 
 ## 🧪 Testing Instructions

@@ -1,0 +1,237 @@
+import enum
+
+
+class UserRole(str, enum.Enum):
+    SUPER_ADMIN = "SUPER_ADMIN"
+    ORG_ADMIN = "ORG_ADMIN"
+    HR = "HR"
+    MANAGER = "MANAGER"
+    DIRECTOR = "DIRECTOR"
+    PAYROLL = "PAYROLL"
+    EMPLOYEE = "EMPLOYEE"
+
+
+class UserStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    SUSPENDED = "SUSPENDED"
+    PENDING = "PENDING"
+
+
+class OrganizationStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    SUSPENDED = "SUSPENDED"
+    PENDING = "PENDING"
+
+
+class DepartmentStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+
+
+class EmployeeStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    TERMINATED = "TERMINATED"
+    ON_LEAVE = "ON_LEAVE"
+    PROBATION = "PROBATION"
+
+
+class EmploymentType(str, enum.Enum):
+    FULL_TIME = "FULL_TIME"
+    PART_TIME = "PART_TIME"
+    CONTRACT = "CONTRACT"
+    INTERN = "INTERN"
+    FREELANCE = "FREELANCE"
+
+
+class Gender(str, enum.Enum):
+    MALE = "MALE"
+    FEMALE = "FEMALE"
+    OTHER = "OTHER"
+    PREFER_NOT_TO_SAY = "PREFER_NOT_TO_SAY"
+
+
+class AttendanceType(str, enum.Enum):
+    REGULAR = "REGULAR"
+    OVERTIME = "OVERTIME"
+    HOLIDAY = "HOLIDAY"
+    SICK_LEAVE = "SICK_LEAVE"
+    VACATION = "VACATION"
+    REMOTE = "REMOTE"
+    BUSINESS_TRIP = "BUSINESS_TRIP"
+
+
+class AttendanceStatus(str, enum.Enum):
+    PRESENT = "PRESENT"
+    ABSENT = "ABSENT"
+    LATE = "LATE"
+    HALF_DAY = "HALF_DAY"
+    ON_LEAVE = "ON_LEAVE"
+    REMOTE = "REMOTE"
+
+
+class BreakType(str, enum.Enum):
+    LUNCH = "LUNCH"
+    COFFEE = "COFFEE"
+    REST = "REST"
+    MEETING = "MEETING"
+    OTHER = "OTHER"
+
+
+class TimeOffStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+
+
+class LeaveType(str, enum.Enum):
+    ANNUAL = "ANNUAL"
+    SICK = "SICK"
+    PERSONAL = "PERSONAL"
+    MATERNITY = "MATERNITY"
+    PATERNITY = "PATERNITY"
+    BEREAVEMENT = "BEREAVEMENT"
+    UNPAID = "UNPAID"
+    COMPENSATORY = "COMPENSATORY"
+    STUDY = "STUDY"
+    OTHER = "OTHER"
+
+
+class LeaveStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+
+
+class PayrollStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    PROCESSING = "PROCESSING"
+    PAID = "PAID"
+    FAILED = "FAILED"
+
+
+class SalaryComponentType(str, enum.Enum):
+    BASIC = "BASIC"
+    ALLOWANCE = "ALLOWANCE"
+    BONUS = "BONUS"
+    OVERTIME = "OVERTIME"
+    COMMISSION = "COMMISSION"
+    DEDUCTION = "DEDUCTION"
+    TAX = "TAX"
+    INSURANCE = "INSURANCE"
+    PENSION = "PENSION"
+    HOUSING_ALLOWANCE = "HOUSING_ALLOWANCE"
+    TRANSPORT_ALLOWANCE = "TRANSPORT_ALLOWANCE"
+    MEDICAL_ALLOWANCE = "MEDICAL_ALLOWANCE"
+    MEAL_ALLOWANCE = "MEAL_ALLOWANCE"
+    LOAN_DEDUCTION = "LOAN_DEDUCTION"
+    ADVANCE_DEDUCTION = "ADVANCE_DEDUCTION"
+    UNIFORM_DEDUCTION = "UNIFORM_DEDUCTION"
+    PARKING_DEDUCTION = "PARKING_DEDUCTION"
+    LATE_PENALTY = "LATE_PENALTY"
+
+
+class DocumentType(str, enum.Enum):
+    CONTRACT = "CONTRACT"
+    POLICY = "POLICY"
+    FORM = "FORM"
+    CERTIFICATE = "CERTIFICATE"
+    ID_DOCUMENT = "ID_DOCUMENT"
+    RESUME = "RESUME"
+    PERFORMANCE_REVIEW = "PERFORMANCE_REVIEW"
+    TRAINING_CERTIFICATE = "TRAINING_CERTIFICATE"
+    EXPENSE_RECEIPT = "EXPENSE_RECEIPT"
+    INVOICE = "INVOICE"
+    REPORT = "REPORT"
+    OTHER = "OTHER"
+
+
+class DocumentStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
+    ARCHIVED = "ARCHIVED"
+
+
+class DocumentCategory(str, enum.Enum):
+    EMPLOYEE = "EMPLOYEE"
+    ORGANIZATION = "ORGANIZATION"
+    DEPARTMENT = "DEPARTMENT"
+    LEGAL = "LEGAL"
+    FINANCIAL = "FINANCIAL"
+    HR = "HR"
+    TRAINING = "TRAINING"
+    EXPENSE = "EXPENSE"
+    OTHER = "OTHER"
+
+
+class ExpenseType(str, enum.Enum):
+    TRAVEL = "TRAVEL"
+    MEALS = "MEALS"
+    ACCOMMODATION = "ACCOMMODATION"
+    TRANSPORTATION = "TRANSPORTATION"
+    OFFICE_SUPPLIES = "OFFICE_SUPPLIES"
+    EQUIPMENT = "EQUIPMENT"
+    SOFTWARE = "SOFTWARE"
+    TRAINING = "TRAINING"
+    ENTERTAINMENT = "ENTERTAINMENT"
+    OTHER = "OTHER"
+
+
+class ExpenseStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    PAID = "PAID"
+    CANCELLED = "CANCELLED"
+
+
+class PaymentMethod(str, enum.Enum):
+    CASH = "CASH"
+    CREDIT_CARD = "CREDIT_CARD"
+    DEBIT_CARD = "DEBIT_CARD"
+    BANK_TRANSFER = "BANK_TRANSFER"
+    CHECK = "CHECK"
+    COMPANY_CARD = "COMPANY_CARD"
+    REIMBURSEMENT = "REIMBURSEMENT"
+
+
+class CourseType(str, enum.Enum):
+    ONLINE = "ONLINE"
+    IN_PERSON = "IN_PERSON"
+    HYBRID = "HYBRID"
+    SELF_PACED = "SELF_PACED"
+
+
+class CourseStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    ARCHIVED = "ARCHIVED"
+
+
+class EnrollmentStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    ENROLLED = "ENROLLED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    DROPPED = "DROPPED"
+    FAILED = "FAILED"
+
+
+class AssessmentType(str, enum.Enum):
+    QUIZ = "QUIZ"
+    EXAM = "EXAM"
+    ASSIGNMENT = "ASSIGNMENT"
+    PRESENTATION = "PRESENTATION"
+    PRACTICAL = "PRACTICAL"
+

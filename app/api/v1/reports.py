@@ -1,313 +1,410 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
-from typing import Optional, List
-from datetime import datetime, date, timedelta
-from app.core.database import get_db
-from app.models.user import User, UserRole
-from app.models.employee import Employee
-from app.models.organization import Organization
-from app.models.attendance import Attendance
-from app.models.leave import LeaveRequest
-from app.models.payroll import PayrollRecord
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional
+
+from beanie import PydanticObjectId
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
 from app.api.v1.auth import get_current_user
+from app.core.mongo import get_mongo_db
+from app.models.enums import AttendanceStatus, EmployeeStatus, LeaveStatus, UserRole
+from app.models.mongo_models import (
+    AttendanceDocument,
+    DepartmentDocument,
+    EmployeeDocument,
+    LeaveRequestDocument,
+    PayrollRecordDocument,
+    UserDocument,
+)
 
 router = APIRouter()
 
 
-@router.get("/dashboard")
-async def get_dashboard_data(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get dashboard data with organization-specific filtering
-    """
-    # Check permissions
-    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR, UserRole.PAYROLL, UserRole.DIRECTOR, UserRole.MANAGER]:
+def _require_reporting_role(user: UserDocument) -> None:
+    if user.role not in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ORG_ADMIN,
+        UserRole.HR,
+        UserRole.PAYROLL,
+        UserRole.DIRECTOR,
+        UserRole.MANAGER,
+    ]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to view dashboard data"
+            detail="Not authorized to access HR reports",
         )
-    
-    # Set organization filter
-    if current_user.role == UserRole.SUPER_ADMIN:
-        org_filter = True  # Super admin can see all data
-    else:
-        org_filter = Employee.organization_id == current_user.organization_id
-    
+
+
+def _org_match(current_user: UserDocument) -> Dict[str, Any]:
+    if current_user.role == UserRole.SUPER_ADMIN or not current_user.organization_id:
+        return {}
+    return {"organization_id": current_user.organization_id}
+
+
+async def _department_name_map(department_ids: List[PydanticObjectId]) -> Dict[PydanticObjectId, str]:
+    if not department_ids:
+        return {}
+    departments = await DepartmentDocument.find({"_id": {"$in": department_ids}}).to_list()
+    return {dept.id: dept.name for dept in departments}
+
+
+@router.get("/dashboard")
+async def get_dashboard_data(
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
+):
+    """Return key dashboard metrics scoped to the user's organization."""
+    if current_user.role not in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ORG_ADMIN,
+        UserRole.HR,
+        UserRole.PAYROLL,
+        UserRole.DIRECTOR,
+        UserRole.MANAGER,
+        UserRole.EMPLOYEE,
+    ]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view dashboard data",
+        )
+
+    match_query = _org_match(current_user)
+
     try:
-        # Get employee count
-        employee_count = db.query(Employee).filter(org_filter).count()
-        
-        # Get active employees
-        active_employees = db.query(Employee).filter(
-            and_(org_filter, Employee.status == "ACTIVE")
+        employee_count = await EmployeeDocument.find(match_query).count()
+        active_employees = await EmployeeDocument.find(
+            {**match_query, "status": EmployeeStatus.ACTIVE}
         ).count()
-        
-        # Get recent hires (last 30 days)
-        thirty_days_ago = datetime.now().date() - timedelta(days=30)
-        recent_hires = db.query(Employee).filter(
-            and_(
-                org_filter,
-                Employee.hire_date >= thirty_days_ago
-            )
+
+        thirty_days_ago = datetime.utcnow().date() - timedelta(days=30)
+        recent_hires = await EmployeeDocument.find(
+            {
+                **match_query,
+                "hire_date": {"$gte": thirty_days_ago},
+            }
         ).count()
-        
-        # Get pending leave requests
-        pending_leave = db.query(LeaveRequest).join(Employee, LeaveRequest.employee_id == Employee.id).filter(
-            and_(
-                org_filter,
-                LeaveRequest.status == "PENDING"
-            )
+
+        pending_leave = await LeaveRequestDocument.find(
+            {
+                **match_query,
+                "status": LeaveStatus.PENDING,
+            }
         ).count()
-        
-        # Get employee growth data (last 12 months)
-        from app.models.department import Department
-        employee_growth = []
-        for i in range(12):
-            month_date = datetime.now().date().replace(day=1)
-            if month_date.month - i <= 0:
-                month_date = month_date.replace(year=month_date.year - 1, month=12 + (month_date.month - i))
-            else:
-                month_date = month_date.replace(month=month_date.month - i)
-            
-            # Count employees hired before or during this month
-            month_count = db.query(Employee).filter(
-                and_(
-                    org_filter,
-                    Employee.hire_date <= month_date
-                )
+
+        employee_growth: List[Dict[str, Any]] = []
+        base_month = datetime.utcnow().date().replace(day=1)
+        for offset in range(11, -1, -1):
+            month_start = (base_month - timedelta(days=offset * 30)).replace(day=1)
+            month_name = month_start.strftime("%b")
+            month_count = await EmployeeDocument.find(
+                {
+                    **match_query,
+                    "hire_date": {"$lte": month_start},
+                }
             ).count()
-            
-            month_name = month_date.strftime('%b')
-            employee_growth.append({
-                "month": month_name,
-                "employees": month_count
-            })
-        
-        # Reverse to show oldest to newest
-        employee_growth.reverse()
-        
-        # Get department distribution
-        department_distribution = []
-        dept_counts = db.query(
-            Department.name,
-            func.count(Employee.id).label('count')
-        ).join(Employee, Department.id == Employee.department_id).filter(
-            org_filter
-        ).group_by(Department.name).all()
-        
-        total_employees_for_percentage = max(employee_count, 1)  # Avoid division by zero
-        
-        for dept_name, count in dept_counts:
-            percentage = round((count / total_employees_for_percentage) * 100, 1)
-            department_distribution.append({
-                "department": dept_name,
+            employee_growth.append({"month": month_name, "employees": month_count})
+
+        pipeline = [
+            {"$match": match_query},
+            {"$group": {"_id": "$department_id", "count": {"$sum": 1}}},
+        ]
+        department_counts: Dict[PydanticObjectId, int] = {}
+        collection_name = EmployeeDocument.Settings.name
+        async for doc in db[collection_name].aggregate(pipeline):
+            dept_id = doc["_id"]
+            if dept_id:
+                department_counts[dept_id] = doc["count"]
+
+        department_map = await _department_name_map(list(department_counts.keys()))
+        total_for_percentage = max(employee_count, 1)
+        department_distribution = [
+            {
+                "department": department_map.get(dept_id, "Unknown"),
                 "count": count,
-                "percentage": percentage
-            })
-        
+                "percentage": round((count / total_for_percentage) * 100, 1),
+            }
+            for dept_id, count in department_counts.items()
+        ]
+
+        # Calculate additional metrics for frontend
+        # Attendance rate (last 30 days)
+        attendance_window_start = datetime.utcnow().date() - timedelta(days=30)
+        attendance_records = await AttendanceDocument.find(
+            {
+                **match_query,
+                "date": {"$gte": attendance_window_start},
+            }
+        ).to_list()
+        total_attendance_records = len(attendance_records)
+        present_count = sum(1 for rec in attendance_records if rec.status in [AttendanceStatus.PRESENT, AttendanceStatus.LATE])
+        attendance_rate = (present_count / total_attendance_records * 100) if total_attendance_records > 0 else 0
+
+        # Payroll totals (current month)
+        now = datetime.utcnow()
+        payroll_start = datetime(now.year, now.month, 1)
+        if now.month == 12:
+            payroll_end = datetime(now.year + 1, 1, 1)
+        else:
+            payroll_end = datetime(now.year, now.month + 1, 1)
+        payroll_match: Dict[str, Any] = {"created_at": {"$gte": payroll_start, "$lt": payroll_end}}
+        if match_query.get("organization_id"):
+            payroll_match["organization_id"] = match_query["organization_id"]
+        payroll_records = await PayrollRecordDocument.find(payroll_match).to_list()
+        total_payroll = sum(float(record.gross_pay or 0) for record in payroll_records)
+        average_salary = total_payroll / len(payroll_records) if payroll_records else 0
+
+        # Calculate turnover rate (employees who left in last 30 days / total employees)
+        terminated_employees = await EmployeeDocument.find(
+            {
+                **match_query,
+                "status": EmployeeStatus.TERMINATED,
+                "termination_date": {"$gte": thirty_days_ago},
+            }
+        ).count()
+        turnover_rate = (terminated_employees / employee_count * 100) if employee_count > 0 else 0
+
         return {
+            # Keep original field names for backward compatibility
             "total_employees": employee_count,
             "active_employees": active_employees,
             "recent_hires": recent_hires,
             "pending_leave_requests": pending_leave,
             "employee_growth": employee_growth,
             "department_distribution": department_distribution,
-            "organization_id": current_user.organization_id if current_user.role != UserRole.SUPER_ADMIN else None
+            # Add fields expected by frontend
+            "employee_count": employee_count,  # Alias for frontend
+            "new_hires": recent_hires,  # Alias for frontend
+            "attendance_rate": round(attendance_rate, 1),
+            "total_payroll": round(total_payroll, 2),
+            "average_salary": round(average_salary, 2),
+            "turnover_rate": round(turnover_rate, 1),
+            "organization_id": str(current_user.organization_id) if current_user.organization_id else None,
         }
-        
-    except Exception as e:
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching dashboard data: {str(e)}"
-        )
+            detail=f"Error fetching dashboard data: {exc}",
+        ) from exc
 
 
 @router.get("/employee")
 async def get_employee_reports(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None)
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
-    """
-    Get employee reports with organization-specific filtering
-    """
-    # Check permissions
-    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR, UserRole.PAYROLL, UserRole.DIRECTOR, UserRole.MANAGER]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to view employee reports"
-        )
-    
-    # Set organization filter
-    if current_user.role == UserRole.SUPER_ADMIN:
-        org_filter = True  # Super admin can see all data
-    else:
-        org_filter = Employee.organization_id == current_user.organization_id
-    
+    """Return employee distributions by status, employment type, and department."""
+    _require_reporting_role(current_user)
+    match_query = _org_match(current_user)
+
     try:
-        # Get employees by status
-        employees_by_status = db.query(
-            Employee.status,
-            func.count(Employee.id).label('count')
-        ).filter(org_filter).group_by(Employee.status).all()
-        
-        # Get employees by employment type
-        employees_by_type = db.query(
-            Employee.employment_type,
-            func.count(Employee.id).label('count')
-        ).filter(org_filter).group_by(Employee.employment_type).all()
-        
-        # Get employees by department (if applicable)
-        employees_by_department = db.query(
-            Employee.department_id,
-            func.count(Employee.id).label('count')
-        ).filter(org_filter).group_by(Employee.department_id).all()
-        
+        status_pipeline = [
+            {"$match": match_query},
+            {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+        ]
+        employees_by_status: List[Dict[str, Any]] = []
+        collection_name = EmployeeDocument.Settings.name
+        async for doc in db[collection_name].aggregate(status_pipeline):
+            employees_by_status.append({"status": doc["_id"], "count": doc["count"]})
+
+        type_pipeline = [
+            {"$match": match_query},
+            {"$group": {"_id": "$employment_type", "count": {"$sum": 1}}},
+        ]
+        employees_by_type: List[Dict[str, Any]] = []
+        async for doc in db[collection_name].aggregate(type_pipeline):
+            employees_by_type.append({"type": doc["_id"], "count": doc["count"]})
+
+        dept_pipeline = [
+            {"$match": match_query},
+            {"$group": {"_id": "$department_id", "count": {"$sum": 1}}},
+        ]
+        employees_by_department: List[Dict[str, Any]] = []
+        async for doc in db[collection_name].aggregate(dept_pipeline):
+            employees_by_department.append({"department_id": str(doc["_id"]), "count": doc["count"]})
+
         return {
-            "employees_by_status": [{"status": item.status, "count": item.count} for item in employees_by_status],
-            "employees_by_type": [{"type": item.employment_type, "count": item.count} for item in employees_by_type],
-            "employees_by_department": [{"department_id": item.department_id, "count": item.count} for item in employees_by_department],
-            "organization_id": current_user.organization_id if current_user.role != UserRole.SUPER_ADMIN else None
+            "employees_by_status": employees_by_status,
+            "employees_by_type": employees_by_type,
+            "employees_by_department": employees_by_department,
+            "organization_id": str(current_user.organization_id) if current_user.organization_id else None,
         }
-        
-    except Exception as e:
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching employee reports: {str(e)}"
-        )
+            detail=f"Error fetching employee reports: {exc}",
+        ) from exc
 
 
 @router.get("/attendance")
 async def get_attendance_reports(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UserDocument = Depends(get_current_user),
     start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None)
+    end_date: Optional[date] = Query(None),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
-    """
-    Get attendance reports with organization-specific filtering
-    """
-    # Check permissions
-    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR, UserRole.PAYROLL, UserRole.DIRECTOR, UserRole.MANAGER]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to view attendance reports"
-        )
-    
-    # Set organization filter
-    if current_user.role == UserRole.SUPER_ADMIN:
-        org_filter = True  # Super admin can see all data
-    else:
-        org_filter = Employee.organization_id == current_user.organization_id
-    
+    """Return attendance stats for the selected date range."""
+    _require_reporting_role(current_user)
+
+    match_query = _org_match(current_user)
+    start = start_date or (datetime.utcnow().date() - timedelta(days=30))
+    end = end_date or datetime.utcnow().date()
+    match_query["date"] = {"$gte": start, "$lte": end}
+
     try:
-        # Set default date range if not provided
-        if not start_date:
-            start_date = datetime.now().date() - timedelta(days=30)
-        if not end_date:
-            end_date = datetime.now().date()
-        
-        # Get attendance records
-        attendance_records = db.query(Attendance).join(Employee).filter(
-            and_(
-                org_filter,
-                Attendance.date >= start_date,
-                Attendance.date <= end_date
-            )
-        ).all()
-        
-        # Calculate attendance statistics
-        total_records = len(attendance_records)
-        on_time_count = sum(1 for record in attendance_records if record.status == "PRESENT")
-        late_count = sum(1 for record in attendance_records if record.status == "LATE")
-        absent_count = sum(1 for record in attendance_records if record.status == "ABSENT")
-        
+        records = await AttendanceDocument.find(match_query).to_list()
+        total_records = len(records)
+        on_time = sum(1 for rec in records if rec.status == AttendanceStatus.PRESENT)
+        late = sum(1 for rec in records if rec.status == AttendanceStatus.LATE)
+        absent = sum(1 for rec in records if rec.status == AttendanceStatus.ABSENT)
+
         return {
             "total_records": total_records,
-            "on_time": on_time_count,
-            "late": late_count,
-            "absent": absent_count,
-            "attendance_rate": (on_time_count + late_count) / total_records * 100 if total_records > 0 else 0,
-            "date_range": {
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat()
-            },
-            "organization_id": current_user.organization_id if current_user.role != UserRole.SUPER_ADMIN else None
+            "on_time": on_time,
+            "late": late,
+            "absent": absent,
+            "attendance_rate": ((on_time + late) / total_records * 100) if total_records else 0,
+            "date_range": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+            "organization_id": str(current_user.organization_id) if current_user.organization_id else None,
         }
-        
-    except Exception as e:
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching attendance reports: {str(e)}"
-        )
+            detail=f"Error fetching attendance reports: {exc}",
+        ) from exc
 
 
 @router.get("/payroll")
 async def get_payroll_reports(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    month: Optional[int] = Query(None),
-    year: Optional[int] = Query(None)
+    month: Optional[int] = Query(None, ge=1, le=12),
+    year: Optional[int] = Query(None, ge=2000),
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
-    """
-    Get payroll reports with organization-specific filtering
-    """
-    # Check permissions
-    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR, UserRole.PAYROLL, UserRole.DIRECTOR, UserRole.MANAGER]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to view payroll reports"
-        )
-    
-    # Set organization filter
-    if current_user.role == UserRole.SUPER_ADMIN:
-        org_filter = True  # Super admin can see all data
+    """Return payroll totals for the selected month."""
+    _require_reporting_role(current_user)
+
+    now = datetime.utcnow()
+    target_month = month or now.month
+    target_year = year or now.year
+
+    start = datetime(target_year, target_month, 1)
+    if target_month == 12:
+        end = datetime(target_year + 1, 1, 1)
     else:
-        org_filter = Employee.organization_id == current_user.organization_id
-    
+        end = datetime(target_year, target_month + 1, 1)
+
+    match_query: Dict[str, Any] = {"created_at": {"$gte": start, "$lt": end}}
+    if current_user.role != UserRole.SUPER_ADMIN and current_user.organization_id:
+        match_query["organization_id"] = current_user.organization_id
+
     try:
-        # Set default month/year if not provided
-        if not month or not year:
-            current_date = datetime.now()
-            month = month or current_date.month
-            year = year or current_date.year
-        
-        # Get payroll records for the specified month
-        payroll_records = db.query(PayrollRecord).join(Employee).filter(
-            and_(
-                org_filter,
-                func.extract('month', PayrollRecord.created_at) == month,
-                func.extract('year', PayrollRecord.created_at) == year
-            )
-        ).all()
-        
-        if not payroll_records:
+        records = await PayrollRecordDocument.find(match_query).to_list()
+        total_records = len(records)
+        total_amount = sum(float(record.gross_pay or 0) for record in records)
+
+        if not records:
             return {
-                "message": f"No payroll records found for {month}/{year}",
+                "message": f"No payroll records found for {target_month}/{target_year}",
                 "total_records": 0,
                 "total_amount": 0,
-                "organization_id": current_user.organization_id if current_user.role != UserRole.SUPER_ADMIN else None
+                "organization_id": str(current_user.organization_id) if current_user.organization_id else None,
             }
-        
-        # Calculate payroll statistics
-        total_records = len(payroll_records)
-        total_amount = sum(record.gross_pay for record in payroll_records if record.gross_pay)
-        
+
         return {
             "total_records": total_records,
             "total_amount": total_amount,
-            "average_pay": total_amount / total_records if total_records > 0 else 0,
-            "month": month,
-            "year": year,
-            "organization_id": current_user.organization_id if current_user.role != UserRole.SUPER_ADMIN else None
+            "average_pay": total_amount / total_records if total_records else 0,
+            "month": target_month,
+            "year": target_year,
+            "organization_id": str(current_user.organization_id) if current_user.organization_id else None,
         }
-        
-    except Exception as e:
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching payroll reports: {str(e)}"
-        ) 
+            detail=f"Error fetching payroll reports: {exc}",
+        ) from exc
+
+
+@router.get("/summary")
+async def get_reports_summary(
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
+):
+    """
+    Provide a lightweight collection of key metrics for the reports overview page.
+    Designed to be resilient even when certain collections are empty.
+    """
+    _require_reporting_role(current_user)
+    match_query = _org_match(current_user)
+
+    try:
+        total_employees = await EmployeeDocument.find(match_query).count()
+        active_employees = await EmployeeDocument.find(
+            {**match_query, "status": EmployeeStatus.ACTIVE}
+        ).count()
+        pending_employees = await EmployeeDocument.find(
+            {**match_query, "status": {"$ne": EmployeeStatus.ACTIVE}}
+        ).count()
+
+        department_query = {}
+        if match_query.get("organization_id"):
+            department_query["organization_id"] = match_query["organization_id"]
+        total_departments = await DepartmentDocument.find(department_query).count()
+
+        pending_leave = await LeaveRequestDocument.find(
+            {**match_query, "status": LeaveStatus.PENDING}
+        ).count()
+
+        attendance_window_start = datetime.utcnow().date() - timedelta(days=30)
+        attendance_records = await AttendanceDocument.find(
+            {
+                **match_query,
+                "date": {"$gte": attendance_window_start},
+            }
+        ).to_list()
+        on_time = sum(1 for rec in attendance_records if rec.status == AttendanceStatus.PRESENT)
+        late = sum(1 for rec in attendance_records if rec.status == AttendanceStatus.LATE)
+        absent = sum(1 for rec in attendance_records if rec.status == AttendanceStatus.ABSENT)
+
+        now = datetime.utcnow()
+        payroll_start = datetime(now.year, now.month, 1)
+        if now.month == 12:
+            payroll_end = datetime(now.year + 1, 1, 1)
+        else:
+            payroll_end = datetime(now.year, now.month + 1, 1)
+        payroll_match: Dict[str, Any] = {"created_at": {"$gte": payroll_start, "$lt": payroll_end}}
+        if match_query.get("organization_id"):
+            payroll_match["organization_id"] = match_query["organization_id"]
+        payroll_records = await PayrollRecordDocument.find(payroll_match).to_list()
+        payroll_total = sum(float(record.gross_pay or 0) for record in payroll_records)
+
+        return {
+            "employees": {
+                "total": total_employees,
+                "active": active_employees,
+                "pending_or_inactive": pending_employees,
+            },
+            "departments": {
+                "total": total_departments,
+            },
+            "leave": {
+                "pending_requests": pending_leave,
+            },
+            "attendance_last_30_days": {
+                "records": len(attendance_records),
+                "on_time": on_time,
+                "late": late,
+                "absent": absent,
+            },
+            "payroll_current_month": {
+                "records": len(payroll_records),
+                "total_paid": payroll_total,
+            },
+            "organization_id": str(current_user.organization_id) if current_user.organization_id else None,
+            "last_updated": datetime.utcnow().isoformat(),
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error building reports summary: {exc}",
+        ) from exc

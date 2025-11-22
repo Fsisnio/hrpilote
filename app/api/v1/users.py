@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
 from typing import List, Optional
-from app.core.database import get_db
-from app.models.user import User, UserRole, UserStatus
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from beanie import PydanticObjectId
+from pydantic import BaseModel
+
+from app.core.mongo import get_mongo_db
+from app.models.mongo_models import UserDocument
+from app.models.enums import UserRole, UserStatus
 from app.schemas.auth import UserProfile
 from app.api.v1.auth import get_current_user
-from app.core.security import get_password_hash
-from pydantic import BaseModel
+from app.core.security import get_password_hash, is_valid_password_hash
 
 # Request/Response models
 class UserCreate(BaseModel):
@@ -18,7 +21,7 @@ class UserCreate(BaseModel):
     role: UserRole
     status: UserStatus = UserStatus.ACTIVE
     phone: Optional[str] = None
-    organization_id: Optional[int] = None
+    organization_id: Optional[str] = None
     
     model_config = {"from_attributes": True}
     
@@ -38,7 +41,7 @@ class UserUpdate(BaseModel):
     role: Optional[UserRole] = None
     status: Optional[UserStatus] = None
     phone: Optional[str] = None
-    organization_id: Optional[int] = None
+    organization_id: Optional[str] = None
     
     model_config = {"from_attributes": True}
     
@@ -52,100 +55,177 @@ class UserUpdate(BaseModel):
 router = APIRouter()
 
 
+def _can_manage_users(user: UserDocument) -> bool:
+    """Check if user has permission to manage users"""
+    return user.role in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ORG_ADMIN,
+        UserRole.HR,
+    ]
+
+
+def _user_to_profile(user: UserDocument) -> UserProfile:
+    return UserProfile(
+        id=str(user.id),
+        email=user.email,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        role=user.role,
+        status=user.status,
+        organization_id=str(user.organization_id) if user.organization_id else None,
+        department_id=str(user.department_id) if user.department_id else None,
+        manager_id=str(user.manager_id) if user.manager_id else None,
+        phone=user.phone,
+        address=user.address,
+        date_of_birth=user.date_of_birth,
+        profile_picture=user.profile_picture,
+        is_email_verified=user.is_email_verified,
+        is_active=user.is_active,
+        last_login=user.last_login,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
+
+
 @router.get("/", response_model=List[UserProfile])
 async def get_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     role: Optional[UserRole] = None,
     status: Optional[UserStatus] = None,
-    organization_id: Optional[int] = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    organization_id: Optional[str] = None,
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """
     Get list of users with filtering options
     """
-    # Check permissions
-    if not current_user.can_manage_users and current_user.role not in [UserRole.MANAGER, UserRole.DIRECTOR]:
+    try:
+        # Check permissions - allow users who can manage users, or managers/directors to view users
+        if not _can_manage_users(current_user) and current_user.role not in [UserRole.MANAGER, UserRole.DIRECTOR]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to view users"
+            )
+        
+        # Build query
+        query = {}
+
+        if current_user.role == UserRole.SUPER_ADMIN:
+            pass
+        else:
+            if current_user.organization_id:
+                query["organization_id"] = current_user.organization_id
+            else:
+                # If user has no organization, return empty list
+                # This can happen if org admin was created without organization_id
+                print(f"Warning: User {current_user.email} (role: {current_user.role.value}) has no organization_id")
+                return []
+
+        if role:
+            query["role"] = role
+        if status:
+            query["status"] = status
+        if organization_id and current_user.role == UserRole.SUPER_ADMIN:
+            try:
+                query["organization_id"] = PydanticObjectId(organization_id)
+            except Exception:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid organization ID")
+
+        users = await UserDocument.find(query).skip(skip).limit(limit).to_list()
+        
+        # Convert users to profiles with error handling
+        user_profiles = []
+        for user in users:
+            try:
+                profile = _user_to_profile(user)
+                user_profiles.append(profile)
+            except Exception as e:
+                print(f"Error converting user {user.id} to profile: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
+
+        return user_profiles
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error fetching users: {str(e)}")
+        print(f"Traceback: {error_details}")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to view users"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching users: {str(e)}"
         )
-    
-    # Build query
-    query = db.query(User)
-    
-    # Apply filters based on user role
-    if current_user.role == UserRole.SUPER_ADMIN:
-        # Super admin can see all users
-        pass
-    elif current_user.role == UserRole.ORG_ADMIN:
-        # Org admin can only see users in their organization
-        query = query.filter(User.organization_id == current_user.organization_id)
-    else:
-        # HR, Manager, Director, and other roles can only see users in their organization
-        query = query.filter(User.organization_id == current_user.organization_id)
-    
-    # Apply additional filters
-    if role:
-        query = query.filter(User.role == role)
-    if status:
-        query = query.filter(User.status == status)
-    if organization_id and current_user.role == UserRole.SUPER_ADMIN:
-        query = query.filter(User.organization_id == organization_id)
-    
-    # Apply pagination
-    users = query.offset(skip).limit(limit).all()
-    
-    return users
 
 
 @router.get("/{user_id}", response_model=UserProfile)
 async def get_user(
-    user_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    user_id: str,
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """
     Get specific user by ID
     """
-    # Check permissions
-    if not current_user.can_manage_users and current_user.id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to view this user"
-        )
-    
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    # Check organization access
-    if current_user.role != UserRole.SUPER_ADMIN:
-        if user.organization_id != current_user.organization_id:
+    try:
+        # Check permissions - allow users who can manage users, or users viewing their own profile
+        if not _can_manage_users(current_user) and str(current_user.id) != user_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to view this user"
             )
-    
-    return user
+        
+        try:
+            doc_id = PydanticObjectId(user_id)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+        user = await UserDocument.get(doc_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Check organization access
+        if current_user.role != UserRole.SUPER_ADMIN:
+            if user.organization_id != current_user.organization_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to view this user"
+                )
+        
+        return _user_to_profile(user)
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error fetching user: {str(e)}")
+        print(f"Traceback: {error_details}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching user: {str(e)}"
+        )
 
 
 @router.post("/")
 async def create_user(
     user_data: UserCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """
     Create a new user
     """
     try:
         # Check permissions
-        if not current_user.can_manage_users:
+        if not _can_manage_users(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to create users"
@@ -153,19 +233,36 @@ async def create_user(
         
         # Set organization_id based on current user's role
         organization_id = user_data.organization_id
+        target_org_id: Optional[PydanticObjectId] = None
+
         if current_user.role == UserRole.ORG_ADMIN:
-            organization_id = current_user.organization_id
+            if not current_user.organization_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Organization context missing for admin user",
+                )
+            target_org_id = current_user.organization_id
         elif current_user.role != UserRole.SUPER_ADMIN:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to create users"
             )
+        elif organization_id:
+            try:
+                target_org_id = PydanticObjectId(organization_id)
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid organization ID",
+                )
         
         # Check if email already exists within the same organization
-        existing_user = db.query(User).filter(
-            User.email == user_data.email,
-            User.organization_id == organization_id
-        ).first()
+        existing_user = await UserDocument.find_one(
+            {
+                "email": user_data.email,
+                "organization_id": target_org_id if target_org_id else current_user.organization_id,
+            }
+        )
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -173,7 +270,7 @@ async def create_user(
             )
         
         # Check if username already exists
-        existing_username = db.query(User).filter(User.username == user_data.username).first()
+        existing_username = await UserDocument.find_one(UserDocument.username == user_data.username)
         if existing_username:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -183,9 +280,7 @@ async def create_user(
         # Create new user with validated password hash
         try:
             hashed_password = get_password_hash(user_data.password)
-            
-            # Validate the generated hash
-            from app.core.security import is_valid_password_hash
+
             if not is_valid_password_hash(hashed_password):
                 raise ValueError(f"Generated invalid password hash: {hashed_password[:20]}...")
             
@@ -198,7 +293,7 @@ async def create_user(
                 detail=f"Failed to hash password: {str(e)}"
             )
         
-        new_user = User(
+        new_user = UserDocument(
             email=user_data.email,
             username=user_data.username,
             hashed_password=hashed_password,
@@ -207,18 +302,16 @@ async def create_user(
             role=user_data.role,
             status=user_data.status,
             phone=user_data.phone,
-            organization_id=organization_id,
+            organization_id=target_org_id,
             is_email_verified=True,  # Admin created users are considered verified
             is_active=True
         )
         
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
+        await new_user.insert()
         
         # Return simple response first
         return {
-            "id": new_user.id,
+            "id": str(new_user.id),
             "email": new_user.email,
             "username": new_user.username,
             "first_name": new_user.first_name,
@@ -231,10 +324,8 @@ async def create_user(
         
     except HTTPException:
         # Re-raise HTTPExceptions (like validation errors) as-is
-        db.rollback()
         raise
     except Exception as e:
-        db.rollback()
         import traceback
         error_details = traceback.format_exc()
         print(f"User creation error: {str(e)}")
@@ -247,22 +338,27 @@ async def create_user(
 
 @router.put("/{user_id}", response_model=UserProfile)
 async def update_user(
-    user_id: int,
+    user_id: str,
     user_data: UserUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """
     Update user information
     """
-    # Check permissions
-    if not current_user.can_manage_users and current_user.id != user_id:
+    # Check permissions - allow users who can manage users, or users updating their own profile
+    if not _can_manage_users(current_user) and str(current_user.id) != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update users"
         )
     
-    user = db.query(User).filter(User.id == user_id).first()
+    try:
+        doc_id = PydanticObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user = await UserDocument.get(doc_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -288,31 +384,35 @@ async def update_user(
     # Update user
     for field, value in update_data.items():
         setattr(user, field, value)
-    
-    db.commit()
-    db.refresh(user)
-    
-    return user
+
+    await user.save()
+
+    return _user_to_profile(user)
 
 
 @router.put("/{user_id}/status")
 async def update_user_status(
-    user_id: int,
+    user_id: str,
     new_status: UserStatus,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """
     Update user status
     """
     # Check permissions
-    if not current_user.can_manage_users:
+    if not _can_manage_users(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update user status"
         )
     
-    user = db.query(User).filter(User.id == user_id).first()
+    try:
+        doc_id = PydanticObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user = await UserDocument.get(doc_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -335,29 +435,33 @@ async def update_user_status(
         )
     
     user.status = new_status
-    db.commit()
-    db.refresh(user)
+    await user.save()
     
     return {"message": f"User status updated to {new_status.value}"}
 
 
 @router.delete("/{user_id}")
 async def delete_user(
-    user_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    user_id: str,
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """
     Delete user (soft delete by setting status to INACTIVE)
     """
     # Check permissions
-    if not current_user.can_manage_users:
+    if not _can_manage_users(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to delete users"
         )
     
-    user = db.query(User).filter(User.id == user_id).first()
+    try:
+        doc_id = PydanticObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user = await UserDocument.get(doc_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -382,6 +486,6 @@ async def delete_user(
     # Soft delete
     user.status = UserStatus.INACTIVE
     user.is_active = False
-    db.commit()
+    await user.save()
     
     return {"message": "User deleted successfully"} 

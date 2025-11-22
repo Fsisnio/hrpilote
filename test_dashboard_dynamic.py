@@ -18,7 +18,7 @@ def test_dashboard_dynamic_data():
     
     # Manager credentials
     email = "manager@hrpilot.com"
-    password = "Jesus1993."
+    password = "Jesus1993@"
     
     # Login as manager
     print(f"📧 Logging in as: {email}")

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3016/api/v1';
 
 // Create axios instance
 const api = axios.create({
@@ -48,6 +48,13 @@ api.interceptors.response.use(
       }
     }
     
+    // Handle database connection errors (503)
+    if (error.response?.status === 503 || error.response?.data?.error_type === 'database_connection_error') {
+      const message = error.response?.data?.message || 'Database connection unavailable. Please try again later.';
+      console.error('❌ Database Error:', message);
+      throw new Error(message);
+    }
+    
     // Handle token expiration
     if (error.response?.status === 401) {
       // Token expired, try to refresh
@@ -75,6 +82,13 @@ api.interceptors.response.use(
           window.location.href = '/login';
         }
       }
+    }
+    
+    // Handle other server errors (500)
+    if (error.response?.status === 500) {
+      const message = error.response?.data?.detail || 'Internal server error. Please try again later.';
+      console.error('❌ Server Error:', message);
+      throw new Error(message);
     }
     
     return Promise.reject(error);

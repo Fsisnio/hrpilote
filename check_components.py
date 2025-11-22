@@ -19,7 +19,7 @@ def check_payroll_components():
     print("\n1️⃣ Logging in...")
     login_data = {
         "email": "hr@techcorp.com",
-        "password": "Password123!"
+        "password": "Jesus1993@"
     }
     
     try:

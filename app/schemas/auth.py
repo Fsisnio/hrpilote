@@ -1,10 +1,7 @@
 from pydantic import BaseModel, validator
 from typing import Optional
 from datetime import datetime
-from app.models.user import UserRole, UserStatus
-from typing import Optional
-from datetime import datetime
-from app.models.user import UserRole, UserStatus
+from app.models.enums import UserRole, UserStatus
 
 
 class LoginRequest(BaseModel):
@@ -59,16 +56,16 @@ class ResetPasswordRequest(BaseModel):
 
 
 class UserProfile(BaseModel):
-    id: int
+    id: str  # MongoDB ObjectId as string
     email: str
     username: str
     first_name: str
     last_name: str
     role: UserRole
     status: UserStatus
-    organization_id: Optional[int] = None
-    department_id: Optional[int] = None
-    manager_id: Optional[int] = None
+    organization_id: Optional[str] = None  # MongoDB ObjectId as string
+    department_id: Optional[str] = None  # MongoDB ObjectId as string
+    manager_id: Optional[str] = None  # MongoDB ObjectId as string
     phone: Optional[str] = None
     address: Optional[str] = None
     date_of_birth: Optional[datetime] = None
@@ -83,10 +80,10 @@ class UserProfile(BaseModel):
 
 
 class TokenData(BaseModel):
-    user_id: Optional[int] = None
+    user_id: Optional[str] = None  # MongoDB ObjectId as string
     email: Optional[str] = None
     role: Optional[UserRole] = None
-    organization_id: Optional[int] = None
+    organization_id: Optional[str] = None  # MongoDB ObjectId as string
 
 
 class AuthResponse(BaseModel):

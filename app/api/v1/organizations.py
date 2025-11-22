@@ -1,203 +1,230 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from app.core.database import get_db
-from app.models.user import User, UserRole
-from app.models.organization import Organization
-from app.schemas.organization import OrganizationCreate, OrganizationResponse, OrganizationUpdate
+from fastapi.encoders import jsonable_encoder
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from beanie import PydanticObjectId
 from pydantic import BaseModel
+
+from app.core.mongo import get_mongo_db
 from app.api.v1.auth import get_current_user
+from app.models.mongo_models import OrganizationDocument, UserDocument
+from app.models.enums import UserRole, UserStatus
+from app.schemas.organization import OrganizationCreate, OrganizationResponse, OrganizationUpdate
+from app.core.security import get_password_hash
 
 router = APIRouter()
 
-# Schema for organization creation response with admin info
+
 class OrganizationCreateResponse(BaseModel):
     organization: OrganizationResponse
     admin_user: dict
     message: str
 
 
+def _organization_to_response(doc: OrganizationDocument) -> OrganizationResponse:
+    data = doc.model_dump()
+    data["id"] = str(doc.id)
+    return OrganizationResponse(**jsonable_encoder(data))
+
+
 @router.get("/", response_model=list[OrganizationResponse])
 async def get_organizations(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """
     Get organizations
     """
-    if current_user.role == UserRole.SUPER_ADMIN:
-        # Super admin can see all organizations
-        organizations = db.query(Organization).all()
-    else:
-        # Other users can only see their organization
-        if current_user.organization_id:
-            organizations = db.query(Organization).filter(Organization.id == current_user.organization_id).all()
+    try:
+        if current_user.role == UserRole.SUPER_ADMIN:
+            organizations = await OrganizationDocument.find_all().to_list()
         else:
-            organizations = []
-    
-    return organizations
+            if current_user.organization_id:
+                # Use get() for single organization lookup
+                organization = await OrganizationDocument.get(current_user.organization_id)
+                organizations = [organization] if organization else []
+            else:
+                organizations = []
+
+        # Convert organizations to responses with error handling
+        org_responses = []
+        for org in organizations:
+            try:
+                response = _organization_to_response(org)
+                org_responses.append(response)
+            except Exception as e:
+                print(f"Error converting organization {org.id} to response: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
+        
+        return org_responses
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error fetching organizations: {str(e)}")
+        print(f"Traceback: {error_details}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching organizations: {str(e)}"
+        )
 
 
 @router.post("/", response_model=OrganizationCreateResponse)
 async def create_organization(
     organization: OrganizationCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """
     Create a new organization with admin user
     """
-    # Only SUPER_ADMIN can create organizations
     if current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super administrators can create organizations"
+            detail="Only super administrators can create organizations",
         )
-    
-    # Check if organization code already exists
-    existing_org = db.query(Organization).filter(Organization.code == organization.code).first()
+
+    existing_org = await OrganizationDocument.find_one(OrganizationDocument.code == organization.code)
     if existing_org:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Organization code already exists"
+            detail="Organization code already exists",
         )
-    
-    # Create new organization
-    db_organization = Organization(**organization.dict())
-    db.add(db_organization)
-    db.commit()
-    db.refresh(db_organization)
-    
-    # Create admin user for the organization
-    from app.core.security import get_password_hash
-    from app.models.user import UserStatus
-    
+
+    db_organization = OrganizationDocument(**organization.dict())
+    await db_organization.insert()
+
     admin_email = f"admin@{organization.code.lower()}.com"
     admin_username = f"admin_{organization.code.lower()}"
-    
-    # Check if admin user already exists
-    existing_admin = db.query(User).filter(User.email == admin_email).first()
+
+    existing_admin = await UserDocument.find_one(UserDocument.email == admin_email)
     if existing_admin:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Admin user already exists for this organization"
+            detail="Admin user already exists for this organization",
         )
-    
-    # Create admin user
-    admin_user = User(
+
+    admin_user = UserDocument(
         email=admin_email,
         username=admin_username,
-        hashed_password=get_password_hash("Admin123!"),  # Default password
+        hashed_password=get_password_hash("Admin123!"),
         first_name="Organization",
         last_name="Admin",
         role=UserRole.ORG_ADMIN,
         status=UserStatus.ACTIVE,
         organization_id=db_organization.id,
         is_email_verified=True,
-        is_active=True
+        is_active=True,
     )
-    
-    db.add(admin_user)
-    db.commit()
-    db.refresh(admin_user)
-    
-    # Return organization with admin info
+
+    await admin_user.insert()
+
     return {
-        "organization": db_organization,
+        "organization": _organization_to_response(db_organization),
         "admin_user": {
             "email": admin_email,
             "username": admin_username,
             "password": "Admin123!",
-            "role": UserRole.ORG_ADMIN.value
+            "role": UserRole.ORG_ADMIN.value,
         },
-        "message": f"Organization '{db_organization.name}' created successfully with admin user: {admin_email}"
+        "message": f"Organization '{db_organization.name}' created successfully with admin user: {admin_email}",
     }
 
 
 @router.get("/{org_id}", response_model=OrganizationResponse)
 async def get_organization(
-    org_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    org_id: str,
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """
     Get specific organization
     """
-    organization = db.query(Organization).filter(Organization.id == org_id).first()
+    try:
+        doc_id = PydanticObjectId(org_id)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    organization = await OrganizationDocument.get(doc_id)
     if not organization:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Organization not found"
+            detail="Organization not found",
         )
-    
-    # Check access permissions
-    if current_user.role != UserRole.SUPER_ADMIN and current_user.organization_id != org_id:
+
+    if current_user.role != UserRole.SUPER_ADMIN and current_user.organization_id != organization.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
+            detail="Access denied",
         )
-    
-    return organization
+
+    return _organization_to_response(organization)
 
 
 @router.put("/{org_id}", response_model=OrganizationResponse)
 async def update_organization(
-    org_id: int,
+    org_id: str,
     organization_update: OrganizationUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """
     Update organization
     """
-    # Only SUPER_ADMIN can update organizations
     if current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super administrators can update organizations"
+            detail="Only super administrators can update organizations",
         )
-    
-    organization = db.query(Organization).filter(Organization.id == org_id).first()
+
+    try:
+        doc_id = PydanticObjectId(org_id)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    organization = await OrganizationDocument.get(doc_id)
     if not organization:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Organization not found"
+            detail="Organization not found",
         )
-    
-    # Update organization fields
+
     update_data = organization_update.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(organization, field, value)
-    
-    db.commit()
-    db.refresh(organization)
-    
-    return organization
+
+    await organization.save()
+
+    return _organization_to_response(organization)
 
 
 @router.delete("/{org_id}")
 async def delete_organization(
-    org_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    org_id: str,
+    current_user: UserDocument = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     """
     Delete organization
     """
-    # Only SUPER_ADMIN can delete organizations
     if current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super administrators can delete organizations"
+            detail="Only super administrators can delete organizations",
         )
-    
-    organization = db.query(Organization).filter(Organization.id == org_id).first()
+
+    try:
+        doc_id = PydanticObjectId(org_id)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    organization = await OrganizationDocument.get(doc_id)
     if not organization:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Organization not found"
+            detail="Organization not found",
         )
-    
-    db.delete(organization)
-    db.commit()
-    
-    return {"message": "Organization deleted successfully"} 
+
+    await organization.delete()
+
+    return {"message": "Organization deleted successfully"}
