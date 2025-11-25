@@ -47,6 +47,35 @@ async def _ensure_super_admin() -> None:
     logger.info("✅ Production super admin created: %s", email)
 
 
+async def _ensure_test_user() -> None:
+    """Ensure the test production user exists in Mongo."""
+    email = "test@gmail.com"
+    password = "Test2025"
+    existing = await UserDocument.find_one(UserDocument.email == email)
+    if existing:
+        existing.hashed_password = get_password_hash(password)
+        await existing.save()
+        logger.info("✅ Production test user password updated: %s", email)
+        return
+
+    test_user = UserDocument(
+        email=email,
+        username="test",
+        first_name="Test",
+        last_name="User",
+        hashed_password=get_password_hash(password),
+        role=UserRole.SUPER_ADMIN,
+        status=UserStatus.ACTIVE,
+        organization_id=None,
+        department_id=None,
+        manager_id=None,
+        is_email_verified=True,
+        is_active=True,
+    )
+    await test_user.insert()
+    logger.info("✅ Production test user created: %s", email)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -55,6 +84,7 @@ async def lifespan(app: FastAPI):
         await init_mongo(document_models=ALL_DOCUMENT_MODELS)
         logger.info("MongoDB connection initialized")
         await _ensure_super_admin()
+        await _ensure_test_user()
     except Exception as e:
         logger.error("Failed to initialize database: %s", e)
         logger.warning(
